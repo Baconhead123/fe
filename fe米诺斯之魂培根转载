@@ -1,16 +1,3 @@
----关注b站UID:1531514159
-#NAME?
-#NAME?
-#NAME?
-#NAME?
-#NAME?
----二十三群218012845（五百人群）没满
----二十四群1035646571（五百人群）没满
----二十五群1071017763（五百人群）没满
----二十六群820782679（五百人群）没满
-#NAME?
-#NAME?
-#NAME?
 local Reanimate_Settings = {
 Frequency = 6, -- this is basically how fast the oscillation goes
 Amplification = 6, -- this is how far the oscillation goes
