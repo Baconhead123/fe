@@ -1,3 +1,16 @@
+---关注b站UID:1531514159
+#NAME?
+#NAME?
+#NAME?
+#NAME?
+#NAME?
+---二十三群218012845（五百人群）没满
+---二十四群1035646571（五百人群）没满
+---二十五群1071017763（五百人群）没满
+---二十六群820782679（五百人群）没满
+#NAME?
+#NAME?
+#NAME?
 local Reanimate_Settings = {
 Frequency = 6, -- this is basically how fast the oscillation goes
 Amplification = 6, -- this is how far the oscillation goes
@@ -442,7 +455,7 @@ if not tablefind(Targets, Target) and IsA(Target, "BasePart") and not Target.Anc
 local Model = FindFirstAncestorOfClass(Target, "Model")
 
 if Model and FindFirstChildOfClass(Model, "Humanoid") then
-Target = FindFirstChildOfClassAndName(Model, "BasePart", "HumanoidRootPart") or FindFirstChildWhichIsA(Character, "BasePart") or Target	
+Target = FindFirstChildOfClassAndName(Model, "BasePart", "HumanoidRootPart") or FindFirstChildWhichIsA(Character, "BasePart") or Target
 else
 Model = Target
 end
@@ -1043,7 +1056,7 @@ Accessories = {
 { MeshId = "121342985816617", Name = "Left Arm", Offset = CFrame.Angles(0, 0, 1.57), TextureId = "129264637819824" },
 { MeshId = "121342985816617", Name = "Right Arm", Offset = CFrame.Angles(0, 3.15, 1.57), TextureId = "129264637819824" },
 { MeshId = "83395427313429", Names = { "Left Leg", "Right Leg" }, Offset = CFrame.Angles(0, 0, 1.57), TextureId = "97148121718581" },--18641142410
--- Prosthetics
+#NAME?
 { MeshId = "117554824897780", Name = "Right Leg", Offset = CFrame.Angles(0, -1.57, 0), TextureId = "99077561039115" },
 { MeshId = "123388937940630", Name = "Left Leg", Offset = CFrame.Angles(0, 1.57, 0), TextureId = "99077561039115" },
 { MeshId = "117554824897780", Name = "Right Leg", Offset = CFrame.Angles(0, -1.57, 0), TextureId = "84429400539007" },
@@ -1078,7 +1091,7 @@ Accessories = {
 { MeshId = "139733645770094", Name = "Right Arm", Offset = CFrame.Angles(0, 0,  Rad(90)), TextureId = "130809869695496" },
 { MeshId = "105141400603933", Name = "Left Leg", Offset = CFrame.Angles(0, 0, Rad(90)), TextureId = "71060417496309" },
 { MeshId = "90736849096372", Name = "Right Leg", Offset = CFrame.Angles(0, 0,  Rad(90)), TextureId = "79186624401216" },
--- request
+#NAME?
 { MeshId = "14768666349", Name = "Torso", Offset = CFrame.Angles(0, 0, 0), TextureId = "14768664565" },
 { MeshId = "14768684979", Names = { "Left Arm", "Right Arm"}, Offset = CFrame.Angles(0, 0, 1.57), TextureId = "14768683674" },
 },
