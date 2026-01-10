@@ -1,7 +1,7 @@
 --[[
-    坠落之神 Falling God - 直接控制版
-    版本: 3.0
-    功能: 直接控制玩家角色，不使用替身，所有动作可见
+    坠落之神 Falling God - 肢体动画版
+    版本: 2.0
+    功能: 使用玩家肢体和饰品位移旋转实现的完整技能动画系统
 ]]
 
 -- 服务
@@ -10,58 +10,44 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
-local Workspace = game:GetService("Workspace")
 
 -- 玩家变量
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
-local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-local currentCamera = Workspace.CurrentCamera
+local rootPart = character:WaitForChild("HumanoidRootPart")
 
 -- 配置
 local Config = {
     WalkSpeed = 32,
     JumpPower = 75,
-    MaxHealth = 1000,
+    GodMode = true,
     
-    -- 技能配置
     Skills = {
         ["Falling Strike"] = {
             Cooldown = 6,
-            Damage = 60,
+            Damage = 50,
             ManaCost = 25,
-            Key = Enum.KeyCode.Q,
-            Icon = "http://www.roblox.com/asset/?id=1234567890"
+            Description = "从天而降的重击"
         },
         ["Void Chains"] = {
             Cooldown = 8,
-            Damage = 40,
+            Damage = 35,
             ManaCost = 30,
-            Key = Enum.KeyCode.E,
-            Icon = "http://www.roblox.com/asset/?id=1234567891"
+            Description = "召唤虚空锁链束缚敌人"
         },
         ["Gravity Wave"] = {
             Cooldown = 10,
-            Damage = 50,
+            Damage = 45,
             ManaCost = 40,
-            Key = Enum.KeyCode.R,
-            Icon = "http://www.roblox.com/asset/?id=1234567892"
+            Description = "释放重力冲击波"
         },
         ["Abyss Rift"] = {
             Cooldown = 15,
-            Damage = 80,
+            Damage = 70,
             ManaCost = 60,
-            Key = Enum.KeyCode.F,
-            Icon = "http://www.roblox.com/asset/?id=1234567893"
+            Description = "撕裂空间，召唤深渊裂隙"
         }
-    },
-    
-    -- 动画配置
-    Animation = {
-        IdleBreath = 0.5,  -- 呼吸起伏高度
-        AttackRange = 8,   -- 攻击范围
-        SkillRange = 15,   -- 技能范围
     }
 }
 
@@ -70,463 +56,355 @@ local mana = 100
 local maxMana = 100
 local skillsOnCooldown = {}
 local isAnimating = false
-local isUsingSkill = false
-local canAttack = true
-local comboCount = 0
-local lastAttackTime = 0
+local currentAnimation = nil
 
--- 获取肢体部分
-local bodyParts = {}
-local originalCFrames = {}
+-- 存储原始CFrame
+local originalLimbs = {}
+local limbMotors = {}
 
--- 初始化身体部位
-local function InitializeBodyParts()
-    bodyParts = {
-        Head = character:FindFirstChild("Head"),
-        Torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso"),
-        LeftArm = character:FindFirstChild("LeftUpperArm") or character:FindFirstChild("Left Arm"),
-        RightArm = character:FindFirstChild("RightUpperArm") or character:FindFirstChild("Right Arm"),
-        LeftLeg = character:FindFirstChild("LeftUpperLeg") or character:FindFirstChild("Left Leg"),
-        RightLeg = character:FindFirstChild("RightUpperLeg") or character:FindFirstChild("Right Leg"),
-    }
+-- 获取所有肢体
+local function GetLimbs()
+    local limbs = {}
     
-    -- 存储原始位置
-    originalCFrames = {
-        HumanoidRootPart = humanoidRootPart.CFrame,
-        Camera = currentCamera.CFrame
-    }
+    -- R15肢体
+    local torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+    local leftArm = character:FindFirstChild("LeftUpperArm") or character:FindFirstChild("Left Arm")
+    local rightArm = character:FindFirstChild("RightUpperArm") or character:FindFirstChild("Right Arm")
+    local leftLeg = character:FindFirstChild("LeftUpperLeg") or character:FindFirstChild("Left Leg")
+    local rightLeg = character:FindFirstChild("RightUpperLeg") or character:FindFirstChild("Right Leg")
+    local head = character:FindFirstChild("Head")
+    
+    if torso then
+        limbs.Torso = torso
+        -- 获取躯干的Motor6D
+        for _, motor in pairs(torso:GetChildren()) do
+            if motor:IsA("Motor6D") then
+                if motor.Part1 == torso then
+                    limbMotors.Torso = motor
+                    originalLimbs.Torso = {C0 = motor.C0:Clone(), C1 = motor.C1:Clone()}
+                end
+            end
+        end
+    end
+    
+    if leftArm then limbs.LeftArm = leftArm end
+    if rightArm then limbs.RightArm = rightArm end
+    if leftLeg then limbs.LeftLeg = leftLeg end
+    if rightLeg then limbs.RightLeg = rightLeg end
+    if head then limbs.Head = head end
+    
+    return limbs
 end
 
-InitializeBodyParts()
-
--- 相机控制
-local function UpdateCamera()
-    local lookVector = currentCamera.CFrame.LookVector * Vector3.new(1, 0, 1)
-    local targetPosition = humanoidRootPart.Position
-    humanoidRootPart.CFrame = CFrame.lookAt(targetPosition, targetPosition + lookVector)
+-- 创建饰品（用于特效）
+local function CreateAccessory(partName, meshId, textureId, offset)
+    local accessory = Instance.new("Accessory")
+    local handle = Instance.new("Part")
+    handle.Name = "Handle"
+    handle.Size = Vector3.new(1, 1, 1)
+    handle.Transparency = 0.5
+    handle.CanCollide = false
+    handle.Anchored = false
+    handle.Parent = accessory
+    
+    if meshId then
+        local mesh = Instance.new("SpecialMesh")
+        mesh.MeshId = meshId
+        mesh.TextureId = textureId or ""
+        mesh.Parent = handle
+    end
+    
+    accessory.Parent = character
+    
+    -- 连接到指定部位
+    local attachment = Instance.new("Attachment")
+    attachment.Parent = handle
+    
+    local motor = Instance.new("Motor6D")
+    motor.Part0 = handle
+    motor.Part1 = character[partName] or rootPart
+    motor.C0 = offset or CFrame.new()
+    motor.Parent = handle
+    
+    return accessory
 end
-
--- UI系统
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "FallingGodUI"
-screenGui.Parent = player:WaitForChild("PlayerGui")
-
--- 创建技能栏
-local skillBar = Instance.new("Frame")
-skillBar.Name = "SkillBar"
-skillBar.Size = UDim2.new(0, 400, 0, 80)
-skillBar.Position = UDim2.new(0.5, -200, 1, -100)
-skillBar.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-skillBar.BackgroundTransparency = 0.5
-skillBar.BorderSizePixel = 0
-skillBar.Parent = screenGui
-
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 15)
-UICorner.Parent = skillBar
-
--- 技能按钮
-local skillButtons = {}
-local skillNames = {"Falling Strike", "Void Chains", "Gravity Wave", "Abyss Rift"}
-
-for i = 1, 4 do
-    local skillButton = Instance.new("TextButton")
-    skillButton.Name = "Skill"..i
-    skillButton.Size = UDim2.new(0, 60, 0, 60)
-    skillButton.Position = UDim2.new(0, 20 + (i-1)*85, 0, 10)
-    skillButton.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-    skillButton.Text = ""
-    skillButton.ZIndex = 2
-    skillButton.Parent = skillBar
-    
-    local buttonCorner = Instance.new("UICorner")
-    buttonCorner.CornerRadius = UDim.new(0, 10)
-    buttonCorner.Parent = skillButton
-    
-    -- 技能图标
-    local skillIcon = Instance.new("ImageLabel")
-    skillIcon.Name = "Icon"
-    skillIcon.Size = UDim2.new(0, 40, 0, 40)
-    skillIcon.Position = UDim2.new(0.5, -20, 0.5, -20)
-    skillIcon.BackgroundTransparency = 1
-    skillIcon.Image = Config.Skills[skillNames[i]].Icon
-    skillIcon.Parent = skillButton
-    
-    -- 键位标签
-    local keybindLabel = Instance.new("TextLabel")
-    keybindLabel.Name = "Keybind"
-    keybindLabel.Size = UDim2.new(0, 20, 0, 20)
-    keybindLabel.Position = UDim2.new(1, -22, 0, -2)
-    keybindLabel.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-    keybindLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    keybindLabel.Text = string.sub(tostring(Config.Skills[skillNames[i]].Key), 15) -- 获取按键名称
-    keybindLabel.TextSize = 12
-    keybindLabel.Font = Enum.Font.GothamBold
-    keybindLabel.ZIndex = 3
-    keybindLabel.Parent = skillButton
-    
-    local keyCorner = Instance.new("UICorner")
-    keyCorner.CornerRadius = UDim.new(0, 5)
-    keyCorner.Parent = keybindLabel
-    
-    -- 冷却覆盖
-    local cooldownOverlay = Instance.new("Frame")
-    cooldownOverlay.Name = "Cooldown"
-    cooldownOverlay.Size = UDim2.new(1, 0, 1, 0)
-    cooldownOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    cooldownOverlay.BackgroundTransparency = 0.7
-    cooldownOverlay.Visible = false
-    cooldownOverlay.ZIndex = 3
-    cooldownOverlay.Parent = skillButton
-    
-    local cooldownText = Instance.new("TextLabel")
-    cooldownText.Name = "CooldownText"
-    cooldownText.Size = UDim2.new(1, 0, 1, 0)
-    cooldownText.BackgroundTransparency = 1
-    cooldownText.TextColor3 = Color3.fromRGB(255, 100, 100)
-    cooldownText.Text = ""
-    cooldownText.TextSize = 18
-    cooldownText.Font = Enum.Font.GothamBold
-    cooldownText.ZIndex = 4
-    cooldownText.Parent = cooldownOverlay
-    
-    -- 技能名称
-    local nameLabel = Instance.new("TextLabel")
-    nameLabel.Name = "SkillName"
-    nameLabel.Size = UDim2.new(1, 0, 0, 20)
-    nameLabel.Position = UDim2.new(0, 0, 1, 5)
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    nameLabel.Text = skillNames[i]
-    nameLabel.TextSize = 12
-    nameLabel.Font = Enum.Font.Gotham
-    nameLabel.Parent = skillButton
-    
-    skillButtons[i] = {
-        Button = skillButton,
-        Icon = skillIcon,
-        Cooldown = cooldownOverlay,
-        CooldownText = cooldownText,
-        SkillName = skillNames[i]
-    }
-    
-    -- 点击事件
-    skillButton.MouseButton1Click:Connect(function()
-        UseSkill(skillNames[i])
-    end)
-end
-
--- 状态栏
-local statsFrame = Instance.new("Frame")
-statsFrame.Name = "Stats"
-statsFrame.Size = UDim2.new(0, 300, 0, 100)
-statsFrame.Position = UDim2.new(0, 20, 0, 20)
-statsFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-statsFrame.BackgroundTransparency = 0.5
-statsFrame.BorderSizePixel = 0
-statsFrame.Parent = screenGui
-
-local statsCorner = Instance.new("UICorner")
-statsCorner.CornerRadius = UDim.new(0, 10)
-statsCorner.Parent = statsFrame
-
--- 生命值条
-local healthBar = Instance.new("Frame")
-healthBar.Name = "HealthBar"
-healthBar.Size = UDim2.new(0, 250, 0, 20)
-healthBar.Position = UDim2.new(0.5, -125, 0, 20)
-healthBar.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-healthBar.BorderSizePixel = 0
-healthBar.Parent = statsFrame
-
-local healthFill = Instance.new("Frame")
-healthFill.Name = "HealthFill"
-healthFill.Size = UDim2.new(1, 0, 1, 0)
-healthFill.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
-healthFill.BorderSizePixel = 0
-healthFill.Parent = healthBar
-
-local healthText = Instance.new("TextLabel")
-healthText.Name = "HealthText"
-healthText.Size = UDim2.new(1, 0, 1, 0)
-healthText.BackgroundTransparency = 1
-healthText.TextColor3 = Color3.fromRGB(255, 255, 255)
-healthText.Text = "Health: 1000/1000"
-healthText.TextSize = 14
-healthText.Font = Enum.Font.GothamBold
-healthText.Parent = healthBar
-
--- 法力值条
-local manaBar = Instance.new("Frame")
-manaBar.Name = "ManaBar"
-manaBar.Size = UDim2.new(0, 250, 0, 20)
-manaBar.Position = UDim2.new(0.5, -125, 0, 50)
-manaBar.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-manaBar.BorderSizePixel = 0
-manaBar.Parent = statsFrame
-
-local manaFill = Instance.new("Frame")
-manaFill.Name = "ManaFill"
-manaFill.Size = UDim2.new(mana / maxMana, 0, 1, 0)
-manaFill.BackgroundColor3 = Color3.fromRGB(50, 100, 220)
-manaFill.BorderSizePixel = 0
-manaFill.Parent = manaBar
-
-local manaText = Instance.new("TextLabel")
-manaText.Name = "ManaText"
-manaText.Size = UDim2.new(1, 0, 1, 0)
-manaText.BackgroundTransparency = 1
-manaText.TextColor3 = Color3.fromRGB(255, 255, 255)
-manaText.Text = "Mana: 100/100"
-manaText.TextSize = 14
-manaText.Font = Enum.Font.GothamBold
-manaText.Parent = manaBar
 
 -- 动画系统
 local AnimationSystem = {}
 
--- 重置所有部位
-function AnimationSystem:ResetBodyParts()
-    for _, part in pairs(bodyParts) do
-        if part and part:IsA("BasePart") then
-            part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-            part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+function AnimationSystem:ResetAllLimbs()
+    for limbName, motor in pairs(limbMotors) do
+        if originalLimbs[limbName] then
+            motor.C0 = originalLimbs[limbName].C0
+            motor.C1 = originalLimbs[limbName].C1
         end
     end
 end
 
--- 基础攻击动画
-function AnimationSystem:AttackAnimation(combo)
-    if not canAttack or isUsingSkill then return end
+function AnimationSystem:PlayLimbAnimation(animationName, duration)
+    if isAnimating then return end
     
-    canAttack = false
     isAnimating = true
+    currentAnimation = animationName
     
-    local attackDuration = 0.3
+    local limbs = GetLimbs()
     
-    if combo == 1 then
-        -- 第一次攻击：右拳
-        if bodyParts.RightArm then
-            local originalPosition = bodyParts.RightArm.Position
-            local targetPosition = originalPosition + humanoidRootPart.CFrame.LookVector * 3
+    if animationName == "Idle" then
+        -- 轻微呼吸动画
+        task.spawn(function()
+            while currentAnimation == "Idle" do
+                local breath = math.sin(tick() * 2) * 0.05
+                if limbs.Torso then
+                    local motor = limbMotors.Torso
+                    if motor then
+                        motor.C0 = motor.C0 * CFrame.new(0, breath, 0)
+                    end
+                end
+                task.wait(0.1)
+            end
+        end)
+        
+    elseif animationName == "FallingStrike" then
+        -- 坠落打击动画
+        if limbs.RightArm and limbMotors.RightArm then
+            -- 手臂后摆准备
+            local startCF = originalLimbs.RightArm.C0
+            local prepCF = startCF * CFrame.Angles(math.rad(-45), math.rad(30), 0)
             
-            -- 手臂前伸
-            bodyParts.RightArm.AssemblyLinearVelocity = humanoidRootPart.CFrame.LookVector * 30
+            local tween = TweenService:Create(limbMotors.RightArm, 
+                TweenInfo.new(0.2, Enum.EasingStyle.Quad), 
+                {C0 = prepCF}
+            )
+            tween:Play()
+            tween.Completed:Wait()
             
-            task.wait(0.1)
+            -- 快速下劈
+            local strikeCF = prepCF * CFrame.Angles(math.rad(120), 0, 0)
+            tween = TweenService:Create(limbMotors.RightArm,
+                TweenInfo.new(0.1, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                {C0 = strikeCF}
+            )
+            tween:Play()
+            tween.Completed:Wait()
             
-            -- 收回手臂
-            bodyParts.RightArm.AssemblyLinearVelocity = -humanoidRootPart.CFrame.LookVector * 20
+            -- 创建冲击特效
+            CreateEffect("Impact", rootPart.Position)
             
-            -- 创建攻击特效
-            CreateEffect("Punch", bodyParts.RightArm.Position + humanoidRootPart.CFrame.LookVector * 2)
+            -- 恢复
+            task.wait(0.2)
+            tween = TweenService:Create(limbMotors.RightArm,
+                TweenInfo.new(0.3, Enum.EasingStyle.Quad),
+                {C0 = startCF}
+            )
+            tween:Play()
         end
-    elseif combo == 2 then
-        -- 第二次攻击：左拳
-        if bodyParts.LeftArm then
-            local originalPosition = bodyParts.LeftArm.Position
-            local targetPosition = originalPosition + humanoidRootPart.CFrame.LookVector * 3
+        
+    elseif animationName == "VoidChains" then
+        -- 虚空锁链动画
+        local leftArmMotor = limbMotors.LeftArm
+        local rightArmMotor = limbMotors.RightArm
+        
+        if leftArmMotor and rightArmMotor then
+            -- 双手向两侧展开
+            local leftStart = originalLimbs.LeftArm.C0
+            local rightStart = originalLimbs.RightArm.C0
             
-            -- 手臂前伸
-            bodyParts.LeftArm.AssemblyLinearVelocity = humanoidRootPart.CFrame.LookVector * 30
+            local leftTarget = leftStart * CFrame.Angles(math.rad(45), math.rad(-30), 0)
+            local rightTarget = rightStart * CFrame.Angles(math.rad(45), math.rad(30), 0)
             
-            task.wait(0.1)
+            local tween1 = TweenService:Create(leftArmMotor,
+                TweenInfo.new(0.3, Enum.EasingStyle.Quad),
+                {C0 = leftTarget}
+            )
             
-            -- 收回手臂
-            bodyParts.LeftArm.AssemblyLinearVelocity = -humanoidRootPart.CFrame.LookVector * 20
+            local tween2 = TweenService:Create(rightArmMotor,
+                TweenInfo.new(0.3, Enum.EasingStyle.Quad),
+                {C0 = rightTarget}
+            )
             
-            -- 创建攻击特效
-            CreateEffect("Punch", bodyParts.LeftArm.Position + humanoidRootPart.CFrame.LookVector * 2)
-        end
-    end
-    
-    -- 检测攻击命中
-    CheckAttackHit(Config.BaseDamage)
-    
-    task.wait(attackDuration - 0.1)
-    AnimationSystem:ResetBodyParts()
-    
-    task.wait(0.1)
-    canAttack = true
-    isAnimating = false
-end
-
--- 技能动画
-function AnimationSystem:SkillAnimation(skillName)
-    isUsingSkill = true
-    isAnimating = true
-    
-    if skillName == "Falling Strike" then
-        -- 跳跃动作
-        humanoid.Jump = true
-        
-        -- 向上跳跃
-        humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 100, 0)
-        
-        task.wait(0.3)
-        
-        -- 向下冲击
-        humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, -150, 0)
-        
-        -- 冲击特效
-        task.wait(0.2)
-        CreateEffect("GroundImpact", humanoidRootPart.Position)
-        
-    elseif skillName == "Void Chains" then
-        -- 双手展开
-        if bodyParts.LeftArm and bodyParts.RightArm then
-            bodyParts.LeftArm.AssemblyLinearVelocity = humanoidRootPart.CFrame.RightVector * -15
-            bodyParts.RightArm.AssemblyLinearVelocity = humanoidRootPart.CFrame.RightVector * 15
+            tween1:Play()
+            tween2:Play()
+            task.wait(0.5)
             
             -- 创建锁链特效
             for i = 1, 3 do
-                CreateChainEffect(humanoidRootPart.Position + Vector3.new(math.random(-10, 10), 0, math.random(-10, 10)))
+                CreateChainEffect(rootPart.Position + Vector3.new(math.random(-10, 10), 0, math.random(-10, 10)))
+            end
+            
+            -- 恢复
+            task.wait(0.5)
+            tween1 = TweenService:Create(leftArmMotor,
+                TweenInfo.new(0.3, Enum.EasingStyle.Quad),
+                {C0 = leftStart}
+            )
+            
+            tween2 = TweenService:Create(rightArmMotor,
+                TweenInfo.new(0.3, Enum.EasingStyle.Quad),
+                {C0 = rightStart}
+            )
+            
+            tween1:Play()
+            tween2:Play()
+        end
+        
+    elseif animationName == "GravityWave" then
+        -- 重力波动画
+        if limbs.Torso and limbMotors.Torso then
+            -- 身体前倾
+            local torsoStart = originalLimbs.Torso.C0
+            local torsoTarget = torsoStart * CFrame.Angles(math.rad(20), 0, 0)
+            
+            local tween = TweenService:Create(limbMotors.Torso,
+                TweenInfo.new(0.2, Enum.EasingStyle.Quad),
+                {C0 = torsoTarget}
+            )
+            tween:Play()
+            tween.Completed:Wait()
+            
+            -- 双手向前推
+            if limbMotors.LeftArm and limbMotors.RightArm then
+                local leftTarget = originalLimbs.LeftArm.C0 * CFrame.Angles(0, math.rad(-15), 0)
+                local rightTarget = originalLimbs.RightArm.C0 * CFrame.Angles(0, math.rad(15), 0)
+                
+                local tween1 = TweenService:Create(limbMotors.LeftArm,
+                    TweenInfo.new(0.2, Enum.EasingStyle.Quad),
+                    {C0 = leftTarget}
+                )
+                
+                local tween2 = TweenService:Create(limbMotors.RightArm,
+                    TweenInfo.new(0.2, Enum.EasingStyle.Quad),
+                    {C0 = rightTarget}
+                )
+                
+                tween1:Play()
+                tween2:Play()
+                
+                -- 创建重力波特效
+                CreateGravityWave(rootPart.Position + rootPart.CFrame.LookVector * 5)
+            end
+            
+            -- 恢复
+            task.wait(0.5)
+            AnimationSystem:ResetAllLimbs()
+        end
+        
+    elseif animationName == "AbyssRift" then
+        -- 深渊裂隙动画
+        -- 跪地姿势
+        if limbMotors.LeftLeg and limbMotors.RightLeg and limbMotors.Torso then
+            local leftLegTarget = originalLimbs.LeftLeg.C0 * CFrame.Angles(math.rad(90), 0, 0)
+            local rightLegTarget = originalLimbs.RightLeg.C0 * CFrame.Angles(math.rad(90), 0, 0)
+            local torsoTarget = originalLimbs.Torso.C0 * CFrame.new(0, -1, 0) * CFrame.Angles(math.rad(-20), 0, 0)
+            
+            local tween1 = TweenService:Create(limbMotors.LeftLeg,
+                TweenInfo.new(0.4, Enum.EasingStyle.Quad),
+                {C0 = leftLegTarget}
+            )
+            
+            local tween2 = TweenService:Create(limbMotors.RightLeg,
+                TweenInfo.new(0.4, Enum.EasingStyle.Quad),
+                {C0 = rightLegTarget}
+            )
+            
+            local tween3 = TweenService:Create(limbMotors.Torso,
+                TweenInfo.new(0.4, Enum.EasingStyle.Quad),
+                {C0 = torsoTarget}
+            )
+            
+            tween1:Play()
+            tween2:Play()
+            tween3:Play()
+            
+            tween3.Completed:Wait()
+            
+            -- 双手举向天空
+            if limbMotors.LeftArm and limbMotors.RightArm then
+                local leftArmTarget = originalLimbs.LeftArm.C0 * CFrame.Angles(math.rad(120), math.rad(-20), 0)
+                local rightArmTarget = originalLimbs.RightArm.C0 * CFrame.Angles(math.rad(120), math.rad(20), 0)
+                
+                tween1 = TweenService:Create(limbMotors.LeftArm,
+                    TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                    {C0 = leftArmTarget}
+                )
+                
+                tween2 = TweenService:Create(limbMotors.RightArm,
+                    TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                    {C0 = rightArmTarget}
+                )
+                
+                tween1:Play()
+                tween2:Play()
+                
+                -- 创建裂隙特效
+                CreateRiftEffect(rootPart.Position)
+                
+                task.wait(1)
+                
+                -- 恢复
+                AnimationSystem:ResetAllLimbs()
             end
         end
-        
-    elseif skillName == "Gravity Wave" then
-        -- 身体前倾
-        humanoidRootPart.AssemblyLinearVelocity = humanoidRootPart.CFrame.LookVector * 50
-        
-        -- 双手前推
-        if bodyParts.LeftArm and bodyParts.RightArm then
-            bodyParts.LeftArm.AssemblyLinearVelocity = humanoidRootPart.CFrame.LookVector * 40
-            bodyParts.RightArm.AssemblyLinearVelocity = humanoidRootPart.CFrame.LookVector * 40
-        end
-        
-        -- 创建重力波
-        CreateGravityWave(humanoidRootPart.Position + humanoidRootPart.CFrame.LookVector * 5)
-        
-    elseif skillName == "Abyss Rift" then
-        -- 跪地姿势
-        humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, -20, 0)
-        
-        task.wait(0.3)
-        
-        -- 双手上举
-        if bodyParts.LeftArm and bodyParts.RightArm then
-            bodyParts.LeftArm.AssemblyLinearVelocity = Vector3.new(0, 50, 0)
-            bodyParts.RightArm.AssemblyLinearVelocity = Vector3.new(0, 50, 0)
-        end
-        
-        -- 创建深渊裂隙
-        CreateRiftEffect(humanoidRootPart.Position)
-        
-        task.wait(0.5)
-        
-        -- 冲击波
-        CreateEffect("Shockwave", humanoidRootPart.Position)
     end
     
-    task.wait(0.5)
-    AnimationSystem:ResetBodyParts()
-    
-    isUsingSkill = false
+    task.wait(duration or 1)
     isAnimating = false
-end
-
--- 空闲呼吸动画
-function AnimationSystem:IdleAnimation()
-    if isAnimating or isUsingSkill then return end
-    
-    -- 轻微呼吸起伏
-    local breath = math.sin(tick() * 2) * 0.1
-    
-    if bodyParts.Torso then
-        bodyParts.Torso.AssemblyLinearVelocity = Vector3.new(0, breath * 2, 0)
-    end
-    
-    -- 轻微左右摆动
-    local swing = math.sin(tick() * 1.5) * 0.05
-    
-    if bodyParts.LeftArm then
-        bodyParts.LeftArm.AssemblyAngularVelocity = Vector3.new(0, swing, 0)
-    end
-    
-    if bodyParts.RightArm then
-        bodyParts.RightArm.AssemblyAngularVelocity = Vector3.new(0, -swing, 0)
-    end
+    currentAnimation = nil
 end
 
 -- 特效系统
 function CreateEffect(effectType, position)
-    if effectType == "Punch" then
+    if effectType == "Impact" then
+        -- 冲击波特效
         local part = Instance.new("Part")
-        part.Size = Vector3.new(2, 2, 2)
+        part.Size = Vector3.new(0.1, 0.1, 0.1)
         part.Position = position
-        part.Transparency = 0.5
-        part.Color = Color3.fromRGB(255, 100, 100)
+        part.Transparency = 0.3
+        part.Color = Color3.fromRGB(220, 50, 50)
         part.Material = Enum.Material.Neon
         part.Anchored = true
         part.CanCollide = false
-        part.Parent = Workspace
+        part.Parent = workspace
         
         local tween = TweenService:Create(part,
-            TweenInfo.new(0.3, Enum.EasingStyle.Quad),
-            {Size = Vector3.new(0.1, 0.1, 0.1), Transparency = 1}
-        )
-        tween:Play()
-        
-        Debris:AddItem(part, 1)
-        
-    elseif effectType == "GroundImpact" then
-        local impact = Instance.new("Part")
-        impact.Size = Vector3.new(0.1, 0.1, 0.1)
-        impact.Position = position - Vector3.new(0, 3, 0)
-        impact.Transparency = 0.4
-        impact.Color = Color3.fromRGB(220, 50, 50)
-        impact.Material = Enum.Material.Neon
-        impact.Anchored = true
-        impact.CanCollide = false
-        impact.Parent = Workspace
-        
-        local tween = TweenService:Create(impact,
             TweenInfo.new(0.5, Enum.EasingStyle.Quad),
             {Size = Vector3.new(15, 0.1, 15), Transparency = 1}
         )
         tween:Play()
         
-        Debris:AddItem(impact, 1)
+        Debris:AddItem(part, 1)
         
-    elseif effectType == "Shockwave" then
-        local wave = Instance.new("Part")
-        wave.Size = Vector3.new(1, 1, 1)
-        wave.Shape = Enum.PartType.Cylinder
-        wave.Position = position
-        wave.Transparency = 0.6
-        wave.Color = Color3.fromRGB(150, 50, 200)
-        wave.Material = Enum.Material.Neon
-        wave.Anchored = true
-        wave.CanCollide = false
-        wave.Parent = Workspace
+    elseif effectType == "Chain" then
+        -- 锁链特效
+        local chain = CreateAccessory("HumanoidRootPart", "rbxassetid://1111111111", nil, 
+            CFrame.new(0, 0, 0) * CFrame.Angles(math.rad(90), 0, 0))
         
-        local tween = TweenService:Create(wave,
-            TweenInfo.new(1, Enum.EasingStyle.Quad),
-            {Size = Vector3.new(25, 0.1, 25), Transparency = 1}
-        )
-        tween:Play()
-        
-        Debris:AddItem(wave, 1.5)
+        task.spawn(function()
+            for i = 1, 10 do
+                chain.Handle.Mesh.Scale = chain.Handle.Mesh.Scale + Vector3.new(0.1, 0, 0.1)
+                task.wait(0.05)
+            end
+            chain:Destroy()
+        end)
     end
 end
 
 function CreateChainEffect(position)
-    local chain = Instance.new("Part")
-    chain.Size = Vector3.new(0.5, 5, 0.5)
-    chain.Position = position
-    chain.Color = Color3.fromRGB(80, 30, 120)
-    chain.Material = Enum.Material.Neon
-    chain.Anchored = true
-    chain.CanCollide = false
-    chain.Parent = Workspace
+    local part = Instance.new("Part")
+    part.Size = Vector3.new(0.5, 5, 0.5)
+    part.Position = position
+    part.Color = Color3.fromRGB(80, 30, 120)
+    part.Material = Enum.Material.Neon
+    part.Anchored = true
+    part.CanCollide = false
+    part.Parent = workspace
     
-    -- 摆动动画
+    -- 锁链摆动动画
     task.spawn(function()
-        for i = 1, 10 do
-            chain.CFrame = chain.CFrame * CFrame.Angles(0, math.rad(20), 0)
+        for i = 1, 20 do
+            part.CFrame = part.CFrame * CFrame.Angles(0, math.rad(10), 0)
             task.wait(0.05)
         end
-        chain:Destroy()
+        part:Destroy()
     end)
 end
 
@@ -540,11 +418,11 @@ function CreateGravityWave(position)
     wave.Material = Enum.Material.Neon
     wave.Anchored = true
     wave.CanCollide = false
-    wave.Parent = Workspace
+    wave.Parent = workspace
     
     local tween = TweenService:Create(wave,
         TweenInfo.new(0.8, Enum.EasingStyle.Quad),
-        {Size = Vector3.new(18, 0.1, 18), Transparency = 1}
+        {Size = Vector3.new(20, 0.1, 20), Transparency = 1}
     )
     tween:Play()
     
@@ -552,139 +430,230 @@ function CreateGravityWave(position)
 end
 
 function CreateRiftEffect(position)
-    local rift = Instance.new("Part")
-    rift.Size = Vector3.new(3, 0.2, 3)
-    rift.Position = position
-    rift.Color = Color3.fromRGB(30, 10, 50)
-    rift.Material = Enum.Material.Neon
-    rift.Anchored = true
-    rift.CanCollide = false
-    rift.Parent = Workspace
+    -- 创建裂隙饰品
+    local rift = CreateAccessory("HumanoidRootPart", "rbxassetid://2222222222", nil,
+        CFrame.new(0, -2, 0))
     
-    -- 旋转动画
+    -- 旋转和缩放动画
     task.spawn(function()
-        for i = 1, 20 do
-            rift.Size = rift.Size + Vector3.new(0.5, 0, 0.5)
-            rift.CFrame = rift.CFrame * CFrame.Angles(0, math.rad(15), 0)
+        for i = 1, 30 do
+            rift.Handle.Mesh.Scale = rift.Handle.Mesh.Scale + Vector3.new(0.2, 0.2, 0.2)
+            rift.Handle.CFrame = rift.Handle.CFrame * CFrame.Angles(0, math.rad(20), 0)
             task.wait(0.1)
         end
         rift:Destroy()
     end)
 end
 
--- 攻击检测
-function CheckAttackHit(damage)
+-- 初始化肢体系统
+local limbs = GetLimbs()
+
+-- 存储原始Motor6D数据
+for limbName, part in pairs(limbs) do
+    for _, motor in pairs(part:GetChildren()) do
+        if motor:IsA("Motor6D") then
+            limbMotors[limbName] = motor
+            originalLimbs[limbName] = {C0 = motor.C0:Clone(), C1 = motor.C1:Clone()}
+            break
+        end
+    end
+end
+
+-- 创建饰品特效
+local effectAccessories = {}
+
+-- 创建坠落之神特效饰品
+local function CreateGodEffects()
+    -- 光环特效
+    local halo = CreateAccessory("Head", "rbxassetid://3333333333", nil,
+        CFrame.new(0, 1, 0) * CFrame.Angles(math.rad(90), 0, 0))
+    halo.Handle.Transparency = 0.7
+    halo.Handle.Color = Color3.fromRGB(200, 50, 50)
+    table.insert(effectAccessories, halo)
+    
+    -- 肩部特效
+    local leftShoulder = CreateAccessory("LeftUpperArm", "rbxassetid://4444444444", nil,
+        CFrame.new(0, 0.5, 0))
+    leftShoulder.Handle.Transparency = 0.6
+    leftShoulder.Handle.Color = Color3.fromRGB(150, 50, 200)
+    table.insert(effectAccessories, leftShoulder)
+    
+    local rightShoulder = CreateAccessory("RightUpperArm", "rbxassetid://4444444444", nil,
+        CFrame.new(0, 0.5, 0))
+    rightShoulder.Handle.Transparency = 0.6
+    rightShoulder.Handle.Color = Color3.fromRGB(150, 50, 200)
+    table.insert(effectAccessories, rightShoulder)
+    
+    -- 饰品动画循环
+    task.spawn(function()
+        while true do
+            for _, accessory in pairs(effectAccessories) do
+                if accessory and accessory.Parent then
+                    accessory.Handle.CFrame = accessory.Handle.CFrame * CFrame.Angles(0, math.rad(1), 0)
+                end
+            end
+            task.wait()
+        end
+    end)
+end
+
+-- 技能系统
+local Skills = {}
+
+function Skills:FallingStrike()
+    if skillsOnCooldown["Falling Strike"] or isAnimating or mana < Config.Skills["Falling Strike"].ManaCost then
+        return
+    end
+    
+    mana = mana - Config.Skills["Falling Strike"].ManaCost
+    skillsOnCooldown["Falling Strike"] = true
+    
+    -- 播放动画
+    AnimationSystem:PlayLimbAnimation("FallingStrike", 1.5)
+    
+    -- 伤害逻辑
+    local hitbox = CreateHitbox(10)
+    DamageInRadius(hitbox, Config.Skills["Falling Strike"].Damage)
+    
+    -- 冷却
+    task.wait(Config.Skills["Falling Strike"].Cooldown)
+    skillsOnCooldown["Falling Strike"] = false
+end
+
+function Skills:VoidChains()
+    if skillsOnCooldown["Void Chains"] or isAnimating or mana < Config.Skills["Void Chains"].ManaCost then
+        return
+    end
+    
+    mana = mana - Config.Skills["Void Chains"].ManaCost
+    skillsOnCooldown["Void Chains"] = true
+    
+    AnimationSystem:PlayLimbAnimation("VoidChains", 2)
+    
+    -- 束缚效果
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= Players.LocalPlayer then
+            local targetChar = player.Character
+            if targetChar then
+                local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                if targetRoot and (targetRoot.Position - rootPart.Position).Magnitude < 20 then
+                    -- 添加束缚效果
+                    local bodyVelocity = Instance.new("BodyVelocity")
+                    bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                    bodyVelocity.MaxForce = Vector3.new(10000, 10000, 10000)
+                    bodyVelocity.Parent = targetRoot
+                    
+                    Debris:AddItem(bodyVelocity, 3)
+                end
+            end
+        end
+    end
+    
+    task.wait(Config.Skills["Void Chains"].Cooldown)
+    skillsOnCooldown["Void Chains"] = false
+end
+
+function Skills:GravityWave()
+    if skillsOnCooldown["Gravity Wave"] or isAnimating or mana < Config.Skills["Gravity Wave"].ManaCost then
+        return
+    end
+    
+    mana = mana - Config.Skills["Gravity Wave"].ManaCost
+    skillsOnCooldown["Gravity Wave"] = true
+    
+    AnimationSystem:PlayLimbAnimation("GravityWave", 1.5)
+    
+    -- 击退效果
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= Players.LocalPlayer then
+            local targetChar = player.Character
+            if targetChar then
+                local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                if targetRoot and (targetRoot.Position - rootPart.Position).Magnitude < 15 then
+                    local direction = (targetRoot.Position - rootPart.Position).Unit
+                    local bodyVelocity = Instance.new("BodyVelocity")
+                    bodyVelocity.Velocity = direction * 50 + Vector3.new(0, 10, 0)
+                    bodyVelocity.MaxForce = Vector3.new(10000, 10000, 10000)
+                    bodyVelocity.Parent = targetRoot
+                    
+                    Debris:AddItem(bodyVelocity, 0.5)
+                end
+            end
+        end
+    end
+    
+    task.wait(Config.Skills["Gravity Wave"].Cooldown)
+    skillsOnCooldown["Gravity Wave"] = false
+end
+
+function Skills:AbyssRift()
+    if skillsOnCooldown["Abyss Rift"] or isAnimating or mana < Config.Skills["Abyss Rift"].ManaCost then
+        return
+    end
+    
+    mana = mana - Config.Skills["Abyss Rift"].ManaCost
+    skillsOnCooldown["Abyss Rift"] = true
+    
+    AnimationSystem:PlayLimbAnimation("AbyssRift", 3)
+    
+    -- 大范围伤害
+    task.wait(0.8) -- 等待动画到释放点
+    DamageInRadius(rootPart.Position, 25, Config.Skills["Abyss Rift"].Damage)
+    
+    task.wait(Config.Skills["Abyss Rift"].Cooldown)
+    skillsOnCooldown["Abyss Rift"] = false
+end
+
+-- 工具函数
+function CreateHitbox(radius)
     local hitbox = Instance.new("Part")
-    hitbox.Size = Vector3.new(Config.Animation.AttackRange, Config.Animation.AttackRange, Config.Animation.AttackRange)
-    hitbox.Position = humanoidRootPart.Position + humanoidRootPart.CFrame.LookVector * (Config.Animation.AttackRange / 2)
+    hitbox.Size = Vector3.new(radius * 2, radius * 2, radius * 2)
+    hitbox.Position = rootPart.Position + rootPart.CFrame.LookVector * 5
     hitbox.Transparency = 1
     hitbox.CanCollide = false
     hitbox.Anchored = true
-    hitbox.Parent = Workspace
+    hitbox.Parent = workspace
     
-    -- 检测范围内的敌人
-    for _, otherPlayer in pairs(Players:GetPlayers()) do
-        if otherPlayer ~= player then
-            local otherCharacter = otherPlayer.Character
-            if otherCharacter then
-                local otherRoot = otherCharacter:FindFirstChild("HumanoidRootPart")
-                if otherRoot then
-                    local distance = (otherRoot.Position - hitbox.Position).Magnitude
-                    if distance <= Config.Animation.AttackRange then
-                        local otherHumanoid = otherCharacter:FindFirstChild("Humanoid")
-                        if otherHumanoid then
-                            otherHumanoid:TakeDamage(damage)
-                            ShowDamageNumber(otherRoot.Position, damage)
-                            
-                            -- 击退效果
-                            local direction = (otherRoot.Position - humanoidRootPart.Position).Unit
-                            otherRoot.AssemblyLinearVelocity = direction * 30 + Vector3.new(0, 10, 0)
+    Debris:AddItem(hitbox, 0.1)
+    return hitbox
+end
+
+function DamageInRadius(position, radius, damage)
+    damage = damage or 25
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= Players.LocalPlayer then
+            local targetChar = player.Character
+            if targetChar then
+                local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                if targetRoot then
+                    local distance = (targetRoot.Position - position).Magnitude
+                    if distance <= radius then
+                        local targetHumanoid = targetChar:FindFirstChild("Humanoid")
+                        if targetHumanoid then
+                            targetHumanoid:TakeDamage(damage)
+                            ShowDamageNumber(targetRoot.Position, damage)
                         end
                     end
                 end
             end
         end
     end
-    
-    Debris:AddItem(hitbox, 0.1)
 end
 
--- 技能检测
-function CheckSkillHit(skillName, damage, range)
-    local hitbox = Instance.new("Part")
-    hitbox.Size = Vector3.new(range, range, range)
-    hitbox.Position = humanoidRootPart.Position
-    hitbox.Transparency = 1
-    hitbox.CanCollide = false
-    hitbox.Anchored = true
-    hitbox.Parent = Workspace
-    
-    local skillEffects = {
-        ["Falling Strike"] = function(targetRoot)
-            -- 向上击飞
-            targetRoot.AssemblyLinearVelocity = Vector3.new(0, 80, 0)
-        end,
-        ["Void Chains"] = function(targetRoot)
-            -- 拉向玩家
-            local direction = (humanoidRootPart.Position - targetRoot.Position).Unit
-            targetRoot.AssemblyLinearVelocity = direction * 40
-        end,
-        ["Gravity Wave"] = function(targetRoot)
-            -- 向后击退
-            local direction = (targetRoot.Position - humanoidRootPart.Position).Unit
-            targetRoot.AssemblyLinearVelocity = direction * 50 + Vector3.new(0, 20, 0)
-        end,
-        ["Abyss Rift"] = function(targetRoot)
-            -- 向上击飞并旋转
-            targetRoot.AssemblyLinearVelocity = Vector3.new(0, 100, 0)
-            targetRoot.AssemblyAngularVelocity = Vector3.new(0, 50, 0)
-        end
-    }
-    
-    -- 检测范围内的敌人
-    for _, otherPlayer in pairs(Players:GetPlayers()) do
-        if otherPlayer ~= player then
-            local otherCharacter = otherPlayer.Character
-            if otherCharacter then
-                local otherRoot = otherCharacter:FindFirstChild("HumanoidRootPart")
-                if otherRoot then
-                    local distance = (otherRoot.Position - hitbox.Position).Magnitude
-                    if distance <= range then
-                        local otherHumanoid = otherCharacter:FindFirstChild("Humanoid")
-                        if otherHumanoid then
-                            otherHumanoid:TakeDamage(damage)
-                            ShowDamageNumber(otherRoot.Position, damage)
-                            
-                            -- 应用技能特效
-                            local effect = skillEffects[skillName]
-                            if effect then
-                                effect(otherRoot)
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    Debris:AddItem(hitbox, 0.1)
-end
-
--- 伤害数字显示
 function ShowDamageNumber(position, damage)
     local billboard = Instance.new("BillboardGui")
     billboard.Size = UDim2.new(2, 0, 2, 0)
     billboard.StudsOffset = Vector3.new(0, 3, 0)
     billboard.AlwaysOnTop = true
-    billboard.Adornee = Workspace.Terrain
-    billboard.Parent = Workspace
+    billboard.Adornee = workspace.Terrain
+    billboard.Parent = workspace
     
     local textLabel = Instance.new("TextLabel")
     textLabel.Size = UDim2.new(1, 0, 1, 0)
     textLabel.BackgroundTransparency = 1
     textLabel.Text = tostring(damage)
     textLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-    textLabel.TextSize = 24
+    textLabel.TextSize = 20
     textLabel.Font = Enum.Font.GothamBold
     textLabel.Parent = billboard
     
@@ -705,92 +674,89 @@ function ShowDamageNumber(position, damage)
     Debris:AddItem(billboard, 2)
 end
 
--- 技能系统
-function UseSkill(skillName)
-    if skillsOnCooldown[skillName] or isUsingSkill or mana < Config.Skills[skillName].ManaCost then
-        return
+-- 输入绑定
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        if input.KeyCode == Enum.KeyCode.Q then
+            Skills:FallingStrike()
+        elseif input.KeyCode == Enum.KeyCode.E then
+            Skills:VoidChains()
+        elseif input.KeyCode == Enum.KeyCode.R then
+            Skills:GravityWave()
+        elseif input.KeyCode == Enum.KeyCode.F then
+            Skills:AbyssRift()
+        elseif input.KeyCode == Enum.KeyCode.T then
+            -- 测试动画
+            AnimationSystem:PlayLimbAnimation("Idle", 5)
+        end
     end
+end)
+
+-- 创建UI（简化版）
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = player.PlayerGui
+
+local skillFrame = Instance.new("Frame")
+skillFrame.Size = UDim2.new(0, 400, 0, 80)
+skillFrame.Position = UDim2.new(0.5, -200, 1, -100)
+skillFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+skillFrame.BackgroundTransparency = 0.3
+skillFrame.BorderSizePixel = 0
+skillFrame.Parent = screenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 10)
+UICorner.Parent = skillFrame
+
+local skillKeys = {"Q", "E", "R", "F"}
+local skillNames = {"Falling Strike", "Void Chains", "Gravity Wave", "Abyss Rift"}
+
+for i = 1, 4 do
+    local skillButton = Instance.new("TextButton")
+    skillButton.Size = UDim2.new(0, 70, 0, 70)
+    skillButton.Position = UDim2.new(0, 10 + (i-1)*85, 0, 5)
+    skillButton.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+    skillButton.Text = skillKeys[i]
+    skillButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    skillButton.TextSize = 18
+    skillButton.Font = Enum.Font.GothamBold
+    skillButton.Parent = skillFrame
     
-    local skill = Config.Skills[skillName]
+    local buttonCorner = Instance.new("UICorner")
+    buttonCorner.CornerRadius = UDim.new(0, 8)
+    buttonCorner.Parent = skillButton
     
-    -- 消耗法力
-    mana = mana - skill.ManaCost
-    UpdateUI()
+    local tooltip = Instance.new("TextLabel")
+    tooltip.Size = UDim2.new(2, 0, 0, 40)
+    tooltip.Position = UDim2.new(0, -35, 1, 5)
+    tooltip.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    tooltip.TextColor3 = Color3.fromRGB(255, 255, 255)
+    tooltip.Text = skillNames[i] .. "\n" .. Config.Skills[skillNames[i]].Description
+    tooltip.TextSize = 12
+    tooltip.Visible = false
+    tooltip.Parent = skillButton
     
-    -- 开始冷却
-    skillsOnCooldown[skillName] = true
-    StartCooldown(skillName)
-    
-    -- 播放动画
-    AnimationSystem:SkillAnimation(skillName)
-    
-    -- 技能效果
-    local skillRange = Config.Animation.SkillRange
-    if skillName == "Abyss Rift" then
-        skillRange = 25  -- 更大的范围
-    end
-    
-    -- 延迟执行伤害检测（与动画同步）
-    task.delay(0.3, function()
-        CheckSkillHit(skillName, skill.Damage, skillRange)
+    skillButton.MouseEnter:Connect(function()
+        tooltip.Visible = true
     end)
-end
-
--- 冷却系统
-function StartCooldown(skillName)
-    local skill = Config.Skills[skillName]
-    if not skill then return end
     
-    -- 找到对应的按钮
-    local buttonIndex = nil
-    for i, skillButton in ipairs(skillButtons) do
-        if skillButton.SkillName == skillName then
-            buttonIndex = i
-            break
+    skillButton.MouseLeave:Connect(function()
+        tooltip.Visible = false
+    end)
+    
+    skillButton.MouseButton1Click:Connect(function()
+        if i == 1 then
+            Skills:FallingStrike()
+        elseif i == 2 then
+            Skills:VoidChains()
+        elseif i == 3 then
+            Skills:GravityWave()
+        elseif i == 4 then
+            Skills:AbyssRift()
         end
-    end
-    
-    if buttonIndex then
-        local button = skillButtons[buttonIndex]
-        button.Cooldown.Visible = true
-        
-        -- 冷却计时
-        for i = skill.Cooldown, 0, -1 do
-            button.CooldownText.Text = tostring(i)
-            task.wait(1)
-        end
-        
-        button.Cooldown.Visible = false
-    end
-    
-    skillsOnCooldown[skillName] = false
-end
-
--- 攻击系统
-function PerformAttack()
-    local currentTime = tick()
-    
-    if currentTime - lastAttackTime > 1.5 then
-        comboCount = 0
-    end
-    
-    comboCount = comboCount + 1
-    if comboCount > 2 then comboCount = 1 end
-    
-    AnimationSystem:AttackAnimation(comboCount)
-    
-    lastAttackTime = currentTime
-end
-
--- UI更新
-function UpdateUI()
-    -- 生命值
-    healthFill.Size = UDim2.new(humanoid.Health / Config.MaxHealth, 0, 1, 0)
-    healthText.Text = string.format("HP: %d/%d", math.floor(humanoid.Health), Config.MaxHealth)
-    
-    -- 法力值
-    manaFill.Size = UDim2.new(mana / maxMana, 0, 1, 0)
-    manaText.Text = string.format("MP: %d/%d", mana, maxMana)
+    end)
 end
 
 -- 法力恢复
@@ -798,97 +764,23 @@ task.spawn(function()
     while true do
         task.wait(0.5)
         if mana < maxMana then
-            mana = math.min(maxMana, mana + 2)
-            UpdateUI()
+            mana = math.min(maxMana, mana + 1)
         end
     end
 end)
 
--- 输入绑定
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed or isAnimating then return end
-    
-    -- 攻击（鼠标左键）
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        PerformAttack()
-    
-    -- 技能快捷键
-    elseif input.KeyCode == Enum.KeyCode.Q then
-        UseSkill("Falling Strike")
-    elseif input.KeyCode == Enum.KeyCode.E then
-        UseSkill("Void Chains")
-    elseif input.KeyCode == Enum.KeyCode.R then
-        UseSkill("Gravity Wave")
-    elseif input.KeyCode == Enum.KeyCode.F then
-        UseSkill("Abyss Rift")
-    end
-end)
-
--- 角色属性设置
+-- 初始化
 humanoid.WalkSpeed = Config.WalkSpeed
 humanoid.JumpPower = Config.JumpPower
-humanoid.MaxHealth = Config.MaxHealth
-humanoid.Health = Config.MaxHealth
 
--- 主循环
-RunService.Heartbeat:Connect(function(deltaTime)
-    -- 更新UI
-    UpdateUI()
-    
-    -- 空闲动画
-    if not isAnimating and not isUsingSkill then
-        AnimationSystem:IdleAnimation()
-    end
-    
-    -- 相机跟随
-    if not isUsingSkill then
-        UpdateCamera()
-    end
-    
-    -- 防止角色掉落
-    if humanoidRootPart.Position.Y < -500 then
-        humanoidRootPart.CFrame = CFrame.new(0, 50, 0)
-        AnimationSystem:ResetBodyParts()
-    end
-end)
+if Config.GodMode then
+    humanoid.BreakJointsOnDeath = false
+end
 
--- 角色死亡重置
-humanoid.Died:Connect(function()
-    task.wait(5)
-    -- 重置状态
-    mana = maxMana
-    for skillName, _ in pairs(skillsOnCooldown) do
-        skillsOnCooldown[skillName] = false
-    end
-    
-    -- 重置按钮
-    for _, button in ipairs(skillButtons) do
-        button.Cooldown.Visible = false
-    end
-end)
-
--- 角色重新生成
-player.CharacterAdded:Connect(function(newCharacter)
-    character = newCharacter
-    humanoid = character:WaitForChild("Humanoid")
-    humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-    
-    InitializeBodyParts()
-    
-    -- 重新设置属性
-    humanoid.WalkSpeed = Config.WalkSpeed
-    humanoid.JumpPower = Config.JumpPower
-    humanoid.MaxHealth = Config.MaxHealth
-    humanoid.Health = Config.MaxHealth
-end)
-
--- 初始UI更新
-UpdateUI()
+-- 创建特效饰品
+task.wait(1)
+CreateGodEffects()
 
 print("坠落之神系统已加载！")
-print("控制方式：")
-print("鼠标左键 - 普通攻击")
-print("Q - 坠落打击")
-print("E - 虚空锁链")
-print("R - 重力波")
-print("F - 深渊裂隙")
+print("技能按键：Q, E, R, F")
+print("T键：播放空闲动画")
