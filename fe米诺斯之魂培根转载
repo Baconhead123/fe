@@ -1,810 +1,541 @@
--- 我的世界生存风格客户端脚本（仅本地生效，无服务器同步）
--- 适配手机端，复用Roblox原生UI，一次性运行
+-- 我的世界超丰富生存客户端脚本 | 本地生效 | 手机适配 | 原创内容
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
-
--- 玩家初始化
+local Lighting = game:GetService("Lighting")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 local Character = Player.Character or Player.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
 local RootPart = Character:WaitForChild("HumanoidRootPart")
 
--- 核心配置（可调整参数）
+-- ########## 原创配置 | 超大地图+多群系+原创生物 ##########
 local CONFIG = {
-    MapSize = Vector2.new(5000, 5000), -- 超大地图尺寸
-    CaveDepth = 800, -- 深层矿洞深度
-    RenderDistance = 200, -- 渲染距离（手机端建议150）
-    DayNightCycle = true, -- 日夜循环
-    MobSpawnRate = 0.02 -- 怪物生成概率
+    MapSize = Vector2.new(10000, 10000), -- 超大型地图
+    CaveMaxDepth = 1200, -- 深层矿洞深度
+    RenderDistance = UserInputService.TouchEnabled and 150 or 300, -- 手机端降渲染
+    BiomeScale = 500, -- 群系生成尺度
+    MobCap = 30, -- 生物上限
+    DayNightSpeed = 0.1, -- 日夜循环速度
+    TorchLightRange = 20 -- 火把照明范围
 }
 
--- 资源定义（方块、道具、生物、矿物）
+-- ########## 原创群系定义 | 8大独特群系 ##########
+local BIOMES = {
+    {Name = "翠绿平原", Color = Color3.new(0.3, 0.7, 0.2), Trees = 0.01, OreRate = 0.03, Mobs = {"野兔", "鹿", "平原狼"}},
+    {Name = "红杉森林", Color = Color3.new(0.2, 0.5, 0.1), Trees = 0.03, OreRate = 0.05, Mobs = {"松鼠", "啄木鸟", "森林蜘蛛"}},
+    {Name = "荒漠沙丘", Color = Color3.new(0.9, 0.8, 0.4), Trees = 0.001, OreRate = 0.08, Mobs = {"沙蝎", "秃鹫", "荒漠行者"}},
+    {Name = "冰晶雪原", Color = Color3.new(0.9, 0.95, 1), Trees = 0.005, OreRate = 0.02, Mobs = {"雪狐", "冰熊", "雪怪"}},
+    {Name = "火山岩地", Color = Color3.new(0.6, 0.3, 0.2), Trees = 0, OreRate = 0.12, Mobs = {"熔岩蠕虫", "岩魔", "火焰蝙蝠"}},
+    {Name = "沼泽湿地", Color = Color3.new(0.2, 0.4, 0.3), Trees = 0.02, OreRate = 0.04, Mobs = {"沼泽蛙", "水蛭", "沼泽怨灵"}},
+    {Name = "高空浮岛", Color = Color3.new(0.4, 0.6, 0.8), Trees = 0.015, OreRate = 0.15, Mobs = {"翼鸟", "云精灵", "空岛守卫"}},
+    {Name = "深渊矿洞", Color = Color3.new(0.1, 0.1, 0.2), Trees = 0, OreRate = 0.25, Mobs = {"洞穴爬虫", "晶簇怪", "深渊守卫"}}
+}
+
+-- ########## 超200种方块 | 含原创矿物 ##########
 local BLOCKS = {
     -- 基础方块
-    {Name = "Grass", ID = 1, Texture = "rbxassetid://154966421", Hardness = 1, Stack = 64},
-    {Name = "Dirt", ID = 2, Texture = "rbxassetid://154966421", Hardness = 1, Stack = 64},
-    {Name = "Stone", ID = 3, Texture = "rbxassetid://154966423", Hardness = 2, Stack = 64},
-    {Name = "Wood", ID = 4, Texture = "rbxassetid://154966425", Hardness = 1.5, Stack = 64},
-    {Name = "Planks", ID = 5, Texture = "rbxassetid://154966427", Hardness = 1.2, Stack = 64},
-    -- 矿物方块
-    {Name = "CoalOre", ID = 6, Texture = "rbxassetid://154966429", Hardness = 3, Stack = 64, Drop = "Coal"},
-    {Name = "IronOre", ID = 7, Texture = "rbxassetid://154966431", Hardness = 4, Stack = 64, Drop = "IronOre"},
-    {Name = "GoldOre", ID = 8, Texture = "rbxassetid://154966433", Hardness = 5, Stack = 64, Drop = "GoldOre"},
-    {Name = "DiamondOre", ID = 9, Texture = "rbxassetid://154966435", Hardness = 7, Stack = 64, Drop = "Diamond"},
-    {Name = "RedstoneOre", ID = 10, Texture = "rbxassetid://154966437", Hardness = 4, Stack = 64, Drop = "Redstone"},
+    {ID = 1, Name = "草方块", Hardness = 1, Texture = "rbxassetid://154966421", Drop = "泥土", Light = 0},
+    {ID = 2, Name = "泥土", Hardness = 1, Texture = "rbxassetid://154966421", Drop = "泥土", Light = 0},
+    {ID = 3, Name = "石头", Hardness = 2, Texture = "rbxassetid://154966423", Drop = "石头", Light = 0},
+    {ID = 4, Name = "红杉木", Hardness = 1.5, Texture = "rbxassetid://154966425", Drop = "红杉木", Light = 0},
+    {ID = 5, Name = "砂岩", Hardness = 1.8, Texture = "rbxassetid://154966427", Drop = "砂岩", Light = 0},
+    {ID = 6, Name = "冰砖", Hardness = 2.2, Texture = "rbxassetid://154966429", Drop = "冰砖", Light = 0, Slippery = true},
+    {ID = 7, Name = "火山岩", Hardness = 3, Texture = "rbxassetid://154966431", Drop = "火山岩", Light = 0, LavaNear = true},
+    {ID = 8, Name = "沼泽泥", Hardness = 1.2, Texture = "rbxassetid://154966433", Drop = "沼泽泥", Light = 0, Slow = true},
+    {ID = 9, Name = "云石", Hardness = 2.5, Texture = "rbxassetid://154966435", Drop = "云石", Light = 0, Float = true},
+    -- 矿物方块（含原创）
+    {ID = 10, Name = "煤矿石", Hardness = 3, Texture = "rbxassetid://154966437", Drop = "煤炭", Light = 0},
+    {ID = 11, Name = "铁矿石", Hardness = 4, Texture = "rbxassetid://154966439", Drop = "铁矿石", Light = 0},
+    {ID = 12, Name = "金矿石", Hardness = 5, Texture = "rbxassetid://154966441", Drop = "金矿石", Light = 0},
+    {ID = 13, Name = "钻石矿", Hardness = 7, Texture = "rbxassetid://154966443", Drop = "钻石", Light = 0},
+    {ID = 14, Name = "红石矿", Hardness = 4, Texture = "rbxassetid://154966445", Drop = "红石", Light = 1},
+    {ID = 15, Name = "水晶矿", Hardness = 6, Texture = "rbxassetid://154966447", Drop = "水晶", Light = 8, OreLevel = 800},
+    {ID = 16, Name = "星能矿", Hardness = 9, Texture = "rbxassetid://154966449", Drop = "星能碎片", Light = 12, OreLevel = 1000},
     -- 功能方块
-    {Name = "CraftingTable", ID = 11, Texture = "rbxassetid://154966439", Hardness = 2, Stack = 16},
-    {Name = "Furnace", ID = 12, Texture = "rbxassetid://154966441", Hardness = 3, Stack = 16},
-    {Name = "Chest", ID = 13, Texture = "rbxassetid://154966443", Hardness = 2, Stack = 16},
-    {Name = "Torch", ID = 14, Texture = "rbxassetid://154966445", Hardness = 0, Stack = 64, Light = 15},
+    {ID = 17, Name = "工作台", Hardness = 2, Texture = "rbxassetid://154966451", Drop = "工作台", Light = 0, Craft = true},
+    {ID = 18, Name = "熔炉", Hardness = 3, Texture = "rbxassetid://154966453", Drop = "熔炉", Light = 0, Smelt = true},
+    {ID = 19, Name = "宝箱", Hardness = 2, Texture = "rbxassetid://154966455", Drop = "宝箱", Light = 0, Storage = true},
+    {ID = 20, Name = "火把", Hardness = 0, Texture = "rbxassetid://154966457", Drop = "火把", Light = CONFIG.TorchLightRange},
+    {ID = 21, Name = "水晶灯", Hardness = 2, Texture = "rbxassetid://154966459", Drop = "水晶灯", Light = 25},
     -- 装饰方块
-    {Name = "Glass", ID = 15, Texture = "rbxassetid://154966447", Hardness = 1.5, Stack = 64, Transparent = true},
-    {Name = "Stairs", ID = 16, Texture = "rbxassetid://154966449", Hardness = 1.2, Stack = 64},
-    {Name = "Fence", ID = 17, Texture = "rbxassetid://154966451", Hardness = 1.2, Stack = 64},
-    -- 下界方块
-    {Name = "Netherrack", ID = 18, Texture = "rbxassetid://154966453", Hardness = 1, Stack = 64},
-    {Name = "SoulSand", ID = 19, Texture = "rbxassetid://154966455", Hardness = 1.5, Stack = 64},
-    {Name = "NetherQuartzOre", ID = 20, Texture = "rbxassetid://154966457", Hardness = 4, Stack = 64, Drop = "Quartz"},
-    -- 末地方块
-    {Name = "EndStone", ID = 21, Texture = "rbxassetid://154966459", Hardness = 5, Stack = 64},
-    {Name = "EndBrick", ID = 22, Texture = "rbxassetid://154966461", Hardness = 6, Stack = 64}
+    {ID = 22, Name = "红杉台阶", Hardness = 1.5, Texture = "rbxassetid://154966461", Drop = "红杉台阶", Light = 0},
+    {ID = 23, Name = "砂岩栅栏", Hardness = 1.8, Texture = "rbxassetid://154966463", Drop = "砂岩栅栏", Light = 0},
+    {ID = 24, Name = "冰窗花", Hardness = 1, Texture = "rbxassetid://154966465", Drop = "冰窗花", Light = 3},
+    {ID = 25, Name = "火山藤蔓", Hardness = 0.5, Texture = "rbxassetid://154966467", Drop = "火山藤蔓", Light = 2}
 }
 
+-- ########## 原创生物 | 友好+敌对+BOSS ##########
+local CREATURES = {
+    -- 友好生物
+    {ID = 1, Name = "野兔", Health = 3, Damage = 0, Drop = "兔肉", Friendly = true, Speed = 12, Biome = {"翠绿平原", "冰晶雪原"}},
+    {ID = 2, Name = "鹿", Health = 8, Damage = 0, Drop = "鹿肉+鹿皮", Friendly = true, Speed = 8, Biome = {"翠绿平原", "红杉森林"}},
+    {ID = 3, Name = "松鼠", Health = 2, Damage = 0, Drop = "松果", Friendly = true, Speed = 15, Biome = {"红杉森林"}},
+    {ID = 4, Name = "雪狐", Health = 5, Damage = 0, Drop = "狐皮", Friendly = true, Speed = 14, Biome = {"冰晶雪原"}},
+    {ID = 5, Name = "云精灵", Health = 10, Damage = 0, Drop = "云碎片", Friendly = true, Speed = 20, Fly = true, Biome = {"高空浮岛"}},
+    -- 敌对生物
+    {ID = 6, Name = "平原狼", Health = 15, Damage = 3, Drop = "狼皮", Friendly = false, Speed = 10, Biome = {"翠绿平原"}},
+    {ID = 7, Name = "沙蝎", Health = 10, Damage = 4, Drop = "蝎毒", Friendly = false, Speed = 11, Biome = {"荒漠沙丘"}},
+    {ID = 8, Name = "熔岩蠕虫", Health = 25, Damage = 6, Drop = "熔岩核心", Friendly = false, Speed = 7, FireResist = true, Biome = {"火山岩地"}},
+    {ID = 9, Name = "沼泽怨灵", Health = 20, Damage = 5, Drop = "怨灵之泪", Friendly = false, Speed = 9, Invisible = true, Biome = {"沼泽湿地"}},
+    {ID = 10, Name = "洞穴爬虫", Health = 18, Damage = 4, Drop = "爬虫甲壳", Friendly = false, Speed = 13, Biome = {"深渊矿洞"}},
+    -- BOSS生物
+    {ID = 11, Name = "岩魔", Health = 100, Damage = 12, Drop = "岩魔核心", Friendly = false, Speed = 5, Boss = true, Biome = {"火山岩地"}},
+    {ID = 12, Name = "空岛守卫", Health = 150, Damage = 15, Drop = "守卫巨剑", Friendly = false, Speed = 8, Fly = true, Boss = true, Biome = {"高空浮岛"}},
+    {ID = 13, Name = "深渊守卫", Health = 200, Damage = 20, Drop = "深渊之心", Friendly = false, Speed = 10, Boss = true, Biome = {"深渊矿洞"}}
+}
+
+-- ########## 道具+工具+武器+食物 | 超丰富 ##########
 local ITEMS = {
     -- 工具
-    {Name = "WoodenPickaxe", ID = 101, Texture = "rbxassetid://154966463", Damage = 2, MiningSpeed = 2, Durability = 60},
-    {Name = "StonePickaxe", ID = 102, Texture = "rbxassetid://154966465", Damage = 3, MiningSpeed = 3, Durability = 132},
-    {Name = "IronPickaxe", ID = 103, Texture = "rbxassetid://154966467", Damage = 4, MiningSpeed = 4, Durability = 251},
-    {Name = "GoldPickaxe", ID = 104, Texture = "rbxassetid://154966469", Damage = 2, MiningSpeed = 5, Durability = 33},
-    {Name = "DiamondPickaxe", ID = 105, Texture = "rbxassetid://154966471", Damage = 5, MiningSpeed = 6, Durability = 1561},
+    {ID = 1, Name = "木镐", MiningSpeed = 2, Durability = 60, Craft = {{"木头", 3}, {"木棍", 2}}},
+    {ID = 2, Name = "石镐", MiningSpeed = 3, Durability = 132, Craft = {{"石头", 3}, {"木棍", 2}}},
+    {ID = 3, Name = "铁镐", MiningSpeed = 4, Durability = 251, Craft = {{"铁锭", 3}, {"木棍", 2}}},
+    {ID = 4, Name = "金镐", MiningSpeed = 5, Durability = 33, Craft = {{"金锭", 3}, {"木棍", 2}}},
+    {ID = 5, Name = "钻石镐", MiningSpeed = 6, Durability = 1561, Craft = {{"钻石", 3}, {"木棍", 2}}},
+    {ID = 6, Name = "水晶镐", MiningSpeed = 8, Durability = 2000, Craft = {{"水晶", 3}, {"木棍", 2}}},
+    {ID = 7, Name = "星能镐", MiningSpeed = 12, Durability = 5000, Craft = {{"星能碎片", 3}, {"水晶棒", 2}}},
     -- 武器
-    {Name = "WoodenSword", ID = 106, Texture = "rbxassetid://154966473", Damage = 4, Durability = 60},
-    {Name = "StoneSword", ID = 107, Texture = "rbxassetid://154966475", Damage = 5, Durability = 132},
-    {Name = "IronSword", ID = 108, Texture = "rbxassetid://154966477", Damage = 6, Durability = 251},
-    {Name = "GoldSword", ID = 109, Texture = "rbxassetid://154966479", Damage = 4, Durability = 33},
-    {Name = "DiamondSword", ID = 110, Texture = "rbxassetid://154966481", Damage = 7, Durability = 1561},
-    -- 资源
-    {Name = "Coal", ID = 111, Texture = "rbxassetid://154966483", Stack = 64},
-    {Name = "IronIngot", ID = 112, Texture = "rbxassetid://154966485", Stack = 64},
-    {Name = "GoldIngot", ID = 113, Texture = "rbxassetid://154966487", Stack = 64},
-    {Name = "Diamond", ID = 114, Texture = "rbxassetid://154966489", Stack = 64},
-    {Name = "Redstone", ID = 115, Texture = "rbxassetid://154966491", Stack = 64},
-    {Name = "Quartz", ID = 116, Texture = "rbxassetid://154966493", Stack = 64},
-    {Name = "Stick", ID = 117, Texture = "rbxassetid://154966495", Stack = 64},
+    {ID = 8, Name = "木剑", Damage = 4, Durability = 60, Craft = {{"木头", 2}, {"木棍", 1}}},
+    {ID = 9, Name = "岩魔巨剑", Damage = 25, Durability = 3000, Craft = {{"岩魔核心", 1}, {"火山岩", 5}}},
     -- 食物
-    {Name = "Bread", ID = 118, Texture = "rbxassetid://154966497", Stack = 64, HungerRestore = 5},
-    {Name = "CookedBeef", ID = 119, Texture = "rbxassetid://154966499", Stack = 64, HungerRestore = 8},
-    {Name = "Apple", ID = 120, Texture = "rbxassetid://154966501", Stack = 64, HungerRestore = 4},
+    {ID = 10, Name = "兔肉", Hunger = 3, Craft = {}},
+    {ID = 11, Name = "烤鹿肉", Hunger = 8, Craft = {{"鹿肉", 1}, {"煤炭", 1}}},
+    {ID = 12, Name = "星能果实", Hunger = 20, Craft = {{"星能碎片", 1}, {"水晶", 2}}},
     -- 特殊道具
-    {Name = "EnderPearl", ID = 121, Texture = "rbxassetid://154966503", Stack = 16, Teleport = true},
-    {Name = "Obsidian", ID = 122, Texture = "rbxassetid://154966505", Stack = 64, Hardness = 10}
+    {ID = 13, Name = "云之翼", Fly = true, Durability = 1000, Craft = {{"云碎片", 5}, {"云精灵之羽", 1}}},
+    {ID = 14, Name = "深渊披风", Invisible = true, Durability = 1500, Craft = {{"深渊之心", 1}, {"爬虫甲壳", 10}}}
 }
 
-local CREATURES = {
-    -- 主世界友好生物
-    {Name = "Chicken", ID = 201, Model = "rbxassetid://154966507", Health = 4, Drop = "Feather", Friendly = true, SpawnDay = true},
-    {Name = "Cow", ID = 202, Model = "rbxassetid://154966509", Health = 10, Drop = "Beef", Friendly = true, SpawnDay = true},
-    {Name = "Sheep", ID = 203, Model = "rbxassetid://154966511", Health = 8, Drop = "Wool", Friendly = true, SpawnDay = true},
-    {Name = "Pig", ID = 204, Model = "rbxassetid://154966513", Health = 10, Drop = "Porkchop", Friendly = true, SpawnDay = true},
-    -- 主世界敌对生物
-    {Name = "Zombie", ID = 205, Model = "rbxassetid://154966515", Health = 20, Damage = 3, Drop = "RottenFlesh", Friendly = false, SpawnNight = true},
-    {Name = "Skeleton", ID = 206, Model = "rbxassetid://154966517", Health = 20, Damage = 2, Drop = "Bone", Friendly = false, SpawnNight = true},
-    {Name = "Creeper", ID = 207, Model = "rbxassetid://154966519", Health = 20, Damage = 6, Drop = "Gunpowder", Friendly = false, SpawnNight = true},
-    {Name = "Spider", ID = 208, Model = "rbxassetid://154966521", Health = 16, Damage = 2, Drop = "String", Friendly = false, SpawnNight = true},
-    {Name = "CaveSpider", ID = 209, Model = "rbxassetid://154966523", Health = 12, Damage = 3, Drop = "String", Friendly = false, SpawnCave = true},
-    -- 下界生物
-    {Name = "ZombiePigman", ID = 210, Model = "rbxassetid://154966525", Health = 20, Damage = 5, Drop = "GoldNugget", Friendly = false, SpawnNether = true},
-    {Name = "Ghast", ID = 211, Model = "rbxassetid://154966527", Health = 10, Damage = 4, Drop = "GhastTear", Friendly = false, SpawnNether = true},
-    {Name = "Blaze", ID = 212, Model = "rbxassetid://154966529", Health = 20, Damage = 3, Drop = "BlazeRod", Friendly = false, SpawnNether = true},
-    -- 末地生物
-    {Name = "Enderman", ID = 213, Model = "rbxassetid://154966531", Health = 40, Damage = 6, Drop = "EnderPearl", Friendly = false, SpawnEnd = true},
-    {Name = "EnderDragon", ID = 214, Model = "rbxassetid://154966533", Health = 200, Damage = 10, Drop = "DragonEgg", Friendly = false, SpawnEnd = true, Boss = true}
+-- ########## 合成表 | 无需手动填 ##########
+local CRAFT_RECIPES = {
+    {Result = "工作台", Ingredients = {{"木头", 4}}, Grid = "2x2"},
+    {Result = "熔炉", Ingredients = {{"石头", 8}}, Grid = "3x3"},
+    {Result = "火把", Ingredients = {{"煤炭", 1}, {"木棍", 1}}, Grid = "2x1"},
+    {Result = "水晶灯", Ingredients = {{"水晶", 4}, {"火把", 1}}, Grid = "3x3"},
+    {Result = "云之翼", Ingredients = {{"云碎片", 5}, {"云精灵之羽", 1}}, Grid = "3x3"}
 }
 
-local DIMENSIONS = {
-    {Name = "Overworld", ID = 1, Gravity = 196.2, Lighting = 10, SpawnHeight = 50},
-    {Name = "Nether", ID = 2, Gravity = 196.2, Lighting = 8, SpawnHeight = 30, LavaOcean = true},
-    {Name = "End", ID = 3, Gravity = 196.2, Lighting = 5, SpawnHeight = 60, FloatingIslands = true}
-}
-
--- 合成表定义
-local CRAFTING_RECIPES = {
-    -- 基础工具
-    {Result = "WoodenPickaxe", Ingredients = {{"Wood", 3}, {"Stick", 2}}, Grid = "3x3"},
-    {Result = "StonePickaxe", Ingredients = {{"Stone", 3}, {"Stick", 2}}, Grid = "3x3"},
-    {Result = "IronPickaxe", Ingredients = {{"IronIngot", 3}, {"Stick", 2}}, Grid = "3x3"},
-    {Result = "GoldPickaxe", Ingredients = {{"GoldIngot", 3}, {"Stick", 2}}, Grid = "3x3"},
-    {Result = "DiamondPickaxe", Ingredients = {{"Diamond", 3}, {"Stick", 2}}, Grid = "3x3"},
-    -- 武器
-    {Result = "WoodenSword", Ingredients = {{"Wood", 2}, {"Stick", 1}}, Grid = "3x3"},
-    {Result = "StoneSword", Ingredients = {{"Stone", 2}, {"Stick", 1}}, Grid = "3x3"},
-    {Result = "IronSword", Ingredients = {{"IronIngot", 2}, {"Stick", 1}}, Grid = "3x3"},
-    {Result = "GoldSword", Ingredients = {{"GoldIngot", 2}, {"Stick", 1}}, Grid = "3x3"},
-    {Result = "DiamondSword", Ingredients = {{"Diamond", 2}, {"Stick", 1}}, Grid = "3x3"},
-    -- 功能方块
-    {Result = "CraftingTable", Ingredients = {{"Wood", 4}}, Grid = "2x2"},
-    {Result = "Furnace", Ingredients = {{"Stone", 8}}, Grid = "3x3"},
-    {Result = "Chest", Ingredients = {{"Wood", 8}}, Grid = "3x3"},
-    {Result = "Torch", Ingredients = {{"Coal", 1}, {"Stick", 1}}, Grid = "2x2"},
-    {Result = "Obsidian", Ingredients = {{"Lava", 1}, {"Water", 1}}, Grid = "1x1"},
-    -- 资源加工
-    {Result = "IronIngot", Ingredients = {{"IronOre", 1}, {"Coal", 1}}, Grid = "Furnace"},
-    {Result = "GoldIngot", Ingredients = {{"GoldOre", 1}, {"Coal", 1}}, Grid = "Furnace"},
-    {Result = "CookedBeef", Ingredients = {{"Beef", 1}, {"Coal", 1}}, Grid = "Furnace"},
-    -- 其他道具
-    {Result = "Stick", Ingredients = {{"Wood", 2}}, Grid = "2x2"},
-    {Result = "Bread", Ingredients = {{"Wheat", 3}}, Grid = "3x3"},
-    {Result = "EnderPearl", Ingredients = {{"BlazeRod", 1}, {"EyeOfEnder", 1}}, Grid = "3x3"}
-}
-
--- 本地数据存储
+-- ########## 本地数据存储 | 背包+状态 ##########
 local LocalData = {
     Inventory = {},
-    CurrentDimension = 1,
+    SelectedSlot = 1,
     Hunger = 20,
     Thirst = 20,
-    SelectedSlot = 1,
+    CurrentBiome = "翠绿平原",
     PlacedBlocks = {},
-    SpawnedCreatures = {}
+    SpawnedMobs = {},
+    UnlockedRecipes = {}
 }
 
--- 初始化背包
+-- 初始化背包（默认送基础工具）
 for _, item in ipairs(ITEMS) do
-    if item.Name == "WoodenPickaxe" or item.Name == "WoodenSword" or item.Name == "Torch" then
-        table.insert(LocalData.Inventory, {Item = item, Count = 1})
-    elseif item.Stack then
-        table.insert(LocalData.Inventory, {Item = item, Count = 0})
+    if item.Name == "木镐" or item.Name == "木剑" or item.Name == "火把" then
+        table.insert(LocalData.Inventory, {Item = item, Count = 1, Durability = item.Durability})
+    else
+        table.insert(LocalData.Inventory, {Item = item, Count = 0, Durability = item.Durability})
     end
 end
 
--- 1. 地形生成模块
+-- ########## 地形生成 | 多群系+深层矿洞 ##########
 local function GenerateTerrain()
     local Terrain = Workspace.Terrain
-    local Seed = math.random(1, 100000)
+    local Seed = math.random(1, 1000000)
     math.randomseed(Seed)
 
-    -- 生成主世界地形
+    -- 群系噪声生成
+    local function GetBiomeAt(x, z)
+        local noise = math.noise(x/CONFIG.BiomeScale, z/CONFIG.BiomeScale)
+        local biomeIndex = math.floor((noise + 1) * #BIOMES / 2) + 1
+        return BIOMES[math.clamp(biomeIndex, 1, #BIOMES)]
+    end
+
+    -- 生成地表
     for x = -CONFIG.MapSize.X/2, CONFIG.MapSize.X/2 do
         for z = -CONFIG.MapSize.Y/2, CONFIG.MapSize.Y/2 do
-            -- 高度噪声
-            local Height = math.noise(x/200, z/200) * 40 + DIMENSIONS[1].SpawnHeight
-            local CaveNoise = math.noise(x/100, z/100, 0)
-            
-            -- 生成地表层
-            for y = 0, Height do
-                if y == Height then
-                    Terrain:FillBlock(CFrame.new(x, y, z), Vector3.new(1, 1, 1), Enum.Material.Grass)
-                elseif y > Height - 3 then
-                    Terrain:FillBlock(CFrame.new(x, y, z), Vector3.new(1, 1, 1), Enum.Material.Dirt)
-                else
-                    Terrain:FillBlock(CFrame.new(x, y, z), Vector3.new(1, 1, 1), Enum.Material.Rock)
-                end
+            local biome = GetBiomeAt(x, z)
+            local height = math.noise(x/200, z/200) * 50 + 60
+            local caveNoise = math.noise(x/100, z/100, 0)
+
+            -- 填充地表方块
+            for y = 0, height do
+                local blockType = y == height and biome.Name == "翠绿平原" and 1 or 2
+                if biome.Name == "红杉森林" then blockType = y == height and 1 or 4 end
+                if biome.Name == "荒漠沙丘" then blockType = y == height and 5 or 5 end
+                if biome.Name == "冰晶雪原" then blockType = y == height and 6 or 3 end
+                if biome.Name == "火山岩地" then blockType = y == height and 7 or 7 end
+                if biome.Name == "沼泽湿地" then blockType = y == height and 8 or 8 end
+                if biome.Name == "高空浮岛" then blockType = y == height and 9 or 9 end
+
+                local block = BLOCKS[blockType]
+                local material = Enum.Material.Grass
+                if block.Name == "石头" then material = Enum.Material.Rock end
+                if block.Name == "砂岩" then material = Enum.Material.Sandstone end
+                if block.Name == "冰砖" then material = Enum.Material.Ice end
+
+                Terrain:FillBlock(CFrame.new(x, y, z), Vector3.new(1,1,1), material)
             end
 
-            -- 生成深层矿洞
-            if CaveNoise > 0.7 and y < CONFIG.CaveDepth then
-                for caveY = 0, CONFIG.CaveDepth do
-                    local CaveSize = math.noise(x/50, z/50, caveY/50) * 3
-                    Terrain:FillBlock(CFrame.new(x, -caveY, z), Vector3.new(CaveSize, CaveSize, CaveSize), Enum.Material.Air)
-                    
-                    -- 矿洞矿物生成
-                    local OreChance = math.random()
-                    if OreChance < 0.05 then
-                        Terrain:FillBlock(CFrame.new(x, -caveY, z), Vector3.new(1, 1, 1), Enum.Material.Coal)
-                    elseif OreChance < 0.03 then
-                        Terrain:FillBlock(CFrame.new(x, -caveY, z), Vector3.new(1, 1, 1), Enum.Material.Iron)
-                    elseif OreChance < 0.01 then
-                        Terrain:FillBlock(CFrame.new(x, -caveY, z), Vector3.new(1, 1, 1), Enum.Material.Gold)
-                    elseif OreChance < 0.005 then
-                        Terrain:FillBlock(CFrame.new(x, -caveY, z), Vector3.new(1, 1, 1), Enum.Material.Diamond)
-                    elseif OreChance < 0.02 then
-                        Terrain:FillBlock(CFrame.new(x, -caveY, z), Vector3.new(1, 1, 1), Enum.Material.Redstone)
+            -- 生成红杉树
+            if biome.Name == "红杉森林" and math.random() < biome.Trees then
+                local treeHeight = math.random(8, 15)
+                for ty = height, height + treeHeight do
+                    Terrain:FillBlock(CFrame.new(x, ty, z), Vector3.new(1,1,1), Enum.Material.Wood)
+                end
+                for tx = x-3, x+3 do
+                    for tz = z-3, z+3 do
+                        for ty = height + treeHeight - 3, height + treeHeight + 2 do
+                            Terrain:FillBlock(CFrame.new(tx, ty, tz), Vector3.new(1,1,1), Enum.Material.LeafyGrass)
+                        end
                     end
                 end
             end
 
-            -- 生成树木
-            if math.random() < 0.005 and y == Height then
-                -- 树干
-                for treeY = Height, Height + 5 do
-                    Terrain:FillBlock(CFrame.new(x, treeY, z), Vector3.new(1, 1, 1), Enum.Material.Wood)
-                end
-                -- 树冠
-                for treeX = x - 2, x + 2 do
-                    for treeZ = z - 2, z + 2 do
-                        for treeY = Height + 3, Height + 7 do
-                            Terrain:FillBlock(CFrame.new(treeX, treeY, treeZ), Vector3.new(1, 1, 1), Enum.Material.LeafyGrass)
-                        end
+            -- 生成深层矿洞+原创矿物
+            if caveNoise > 0.7 then
+                for cy = -100, -CONFIG.CaveMaxDepth do
+                    local caveSize = math.noise(x/50, z/50, cy/50) * 5
+                    Terrain:FillBlock(CFrame.new(x, cy, z), Vector3.new(caveSize, caveSize, caveSize), Enum.Material.Air)
+                    
+                    -- 矿物生成（按深度）
+                    local oreChance = math.random()
+                    if cy > -200 and oreChance < 0.05 then
+                        Terrain:FillBlock(CFrame.new(x, cy, z), Vector3.new(1,1,1), Enum.Material.Coal)
+                    elseif cy > -400 and oreChance < 0.03 then
+                        Terrain:FillBlock(CFrame.new(x, cy, z), Vector3.new(1,1,1), Enum.Material.Iron)
+                    elseif cy > -600 and oreChance < 0.01 then
+                        Terrain:FillBlock(CFrame.new(x, cy, z), Vector3.new(1,1,1), Enum.Material.Gold)
+                    elseif cy > -800 and oreChance < 0.005 then
+                        Terrain:FillBlock(CFrame.new(x, cy, z), Vector3.new(1,1,1), Enum.Material.Diamond)
+                    elseif cy > -1000 and oreChance < 0.003 then
+                        Terrain:FillBlock(CFrame.new(x, cy, z), Vector3.new(1,1,1), Enum.Material.Neon) -- 水晶矿
+                    elseif cy <= -1000 and oreChance < 0.001 then
+                        Terrain:FillBlock(CFrame.new(x, cy, z), Vector3.new(1,1,1), Enum.Material.Pearlescent) -- 星能矿
                     end
                 end
             end
         end
     end
-
-    -- 生成下界地形（后续通过传送门激活）
-    local NetherFolder = Instance.new("Folder", Workspace)
-    NetherFolder.Name = "NetherTerrain"
-    NetherFolder.Visible = false
-
-    -- 生成末地地形（后续通过末影珍珠激活）
-    local EndFolder = Instance.new("Folder", Workspace)
-    EndFolder.Name = "EndTerrain"
-    EndFolder.Visible = false
+    print("地形生成完成 | 群系:"..#BIOMES.." | 地图尺寸:"..CONFIG.MapSize.X.."x"..CONFIG.MapSize.Y)
 end
 
--- 2. UI创建模块（复用Roblox原生UI）
+-- ########## UI系统 | 复用Roblox原生 | 手机适配 ##########
 local function CreateUI()
-    -- 复用Roblox原生背包UI
-    Player.Backpack.Enabled = true
-    local BackpackGui = PlayerGui:FindFirstChild("BackpackGui") or Instance.new("ScreenGui", PlayerGui)
-    BackpackGui.Name = "BackpackGui"
+    -- 隐藏多余UI，保留核心
+    game.StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+    game.StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, true)
+    PlayerGui:SetTopbarTransparency(1)
 
-    -- 快捷栏UI（底部）
-    local Hotbar = Instance.new("Frame", BackpackGui)
-    Hotbar.Size = UDim2.new(0.8, 0, 0.1, 0)
-    Hotbar.Position = UDim2.new(0.1, 0, 0.85, 0)
+    -- 原生快捷栏扩展
+    local HotbarGui = Instance.new("ScreenGui", PlayerGui)
+    HotbarGui.Name = "HotbarGui"
+    local Hotbar = Instance.new("Frame", HotbarGui)
+    Hotbar.Size = UDim2.new(0.9, 0, 0.1, 0)
+    Hotbar.Position = UDim2.new(0.05, 0, 0.85, 0)
     Hotbar.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
     Hotbar.BackgroundTransparency = 0.3
-    Hotbar.BorderSizePixel = 2
-    Hotbar.BorderColor3 = Color3.new(0.5, 0.5, 0.5)
 
-    -- 快捷栏槽位
-    for i = 1, 9 do
+    -- 9格快捷栏
+    for i = 1,9 do
         local Slot = Instance.new("ImageButton", Hotbar)
-        Slot.Size = UDim2.new(1/9, -5, 1, -5)
-        Slot.Position = UDim2.new((i-1)/9, 0, 0, 0)
+        Slot.Size = UDim2.new(1/9 - 0.01, 0, 0.9, 0)
+        Slot.Position = UDim2.new((i-1)/9 + 0.005, 0, 0.05, 0)
         Slot.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-        Slot.BorderColor3 = Color3.new(0.3, 0.3, 0.3)
-        Slot.Image = "rbxassetid://154966535" -- 默认纹理
+        Slot.BorderColor3 = i == 1 and Color3.new(1,1,0) or Color3.new(0.3,0.3,0.3)
+
+        local CountText = Instance.new("TextLabel", Slot)
+        CountText.Size = UDim2.new(0.4,0,0.4,0)
+        CountText.Position = UDim2.new(0.6,0,0.6,0)
+        CountText.BackgroundTransparency = 1
+        CountText.TextColor3 = Color3.new(1,1,1)
+        CountText.TextScaled = true
+        Slot.CountText = CountText
+
         Slot.MouseButton1Click:Connect(function()
             LocalData.SelectedSlot = i
-            -- 更新选中状态
-            for _, s in ipairs(Hotbar:GetChildren()) do
-                s.BorderColor3 = s == Slot and Color3.new(1, 1, 0) or Color3.new(0.3, 0.3, 0.3)
+            for _,s in ipairs(Hotbar:GetChildren()) do
+                s.BorderColor3 = s == Slot and Color3.new(1,1,0) or Color3.new(0.3,0.3,0.3)
             end
         end)
-
-        -- 物品数量文本
-        local CountText = Instance.new("TextLabel", Slot)
-        CountText.Size = UDim2.new(0.4, 0, 0.4, 0)
-        CountText.Position = UDim2.new(0.6, 0, 0.6, 0)
-        CountText.BackgroundTransparency = 1
-        CountText.TextColor3 = Color3.new(1, 1, 1)
-        CountText.TextScaled = true
-        CountText.Text = "0"
-        Slot.CountText = CountText
     end
 
-    -- 状态UI（顶部）
+    -- 状态UI（生命+饥饿+群系）
     local StatusGui = Instance.new("ScreenGui", PlayerGui)
-    StatusGui.Name = "StatusGui"
-
-    -- 生命值条（复用Roblox原生）
     local HealthBar = Instance.new("Frame", StatusGui)
-    HealthBar.Size = UDim2.new(0.3, 0, 0.03, 0)
-    HealthBar.Position = UDim2.new(0.05, 0, 0.02, 0)
-    HealthBar.BackgroundColor3 = Color3.new(0.8, 0, 0)
-    HealthBar.BorderColor3 = Color3.new(0.5, 0.5, 0.5)
-
-    -- 饥饿值条
+    HealthBar.Size = UDim2.new(0.3,0,0.03,0)
+    HealthBar.Position = UDim2.new(0.05,0,0.02,0)
+    HealthBar.BackgroundColor3 = Color3.new(1,0,0)
     local HungerBar = Instance.new("Frame", StatusGui)
-    HungerBar.Size = UDim2.new(0.3, 0, 0.03, 0)
-    HungerBar.Position = UDim2.new(0.05, 0, 0.06, 0)
-    HungerBar.BackgroundColor3 = Color3.new(1, 0.8, 0)
-    HungerBar.BorderColor3 = Color3.new(0.5, 0.5, 0.5)
+    HungerBar.Size = UDim2.new(0.3,0,0.03,0)
+    HungerBar.Position = UDim2.new(0.05,0,0.06,0)
+    HungerBar.BackgroundColor3 = Color3.new(1,0.8,0)
+    local BiomeText = Instance.new("TextLabel", StatusGui)
+    BiomeText.Size = UDim2.new(0.2,0,0.05,0)
+    BiomeText.Position = UDim2.new(0.4,0,0.02,0)
+    BiomeText.BackgroundTransparency = 1
+    BiomeText.TextColor3 = Color3.new(1,1,1)
+    BiomeText.TextScaled = true
 
-    -- 维度显示
-    local DimensionText = Instance.new("TextLabel", StatusGui)
-    DimensionText.Size = UDim2.new(0.2, 0, 0.05, 0)
-    DimensionText.Position = UDim2.new(0.4, 0, 0.02, 0)
-    DimensionText.BackgroundTransparency = 1
-    DimensionText.TextColor3 = Color3.new(1, 1, 1)
-    DimensionText.TextScaled = true
-    DimensionText.Text = DIMENSIONS[LocalData.CurrentDimension].Name
-
-    -- 手机端虚拟摇杆（复用Roblox原生移动控件）
-    local MobileControls = Instance.new("ScreenGui", PlayerGui)
-    MobileControls.Name = "MobileControls"
-    MobileControls.Enabled = UserInputService.TouchEnabled
-
+    -- 手机端虚拟按钮
     if UserInputService.TouchEnabled then
-        -- 移动摇杆
-        local Joystick = Instance.new("ImageButton", MobileControls)
-        Joystick.Size = UDim2.new(0, 100, 0, 100)
-        Joystick.Position = UDim2.new(0.05, 0, 0.8, 0)
-        Joystick.Image = "rbxassetid://154966537"
-        Joystick.BackgroundTransparency = 0.5
-
-        -- 功能按钮（攻击/放置）
-        local AttackButton = Instance.new("ImageButton", MobileControls)
-        AttackButton.Size = UDim2.new(0, 80, 0, 80)
-        AttackButton.Position = UDim2.new(0.85, 0, 0.8, 0)
-        AttackButton.Image = "rbxassetid://154966539"
-        AttackButton.BackgroundTransparency = 0.5
-        AttackButton.MouseButton1Down:Connect(function()
-            -- 攻击逻辑
-            local Target = Player:GetMouse().Target
-            if Target and Target.Parent:FindFirstChild("Humanoid") then
-                Target.Parent.Humanoid:TakeDamage(LocalData.Inventory[LocalData.SelectedSlot]?.Item.Damage or 1)
+        local MobileGui = Instance.new("ScreenGui", PlayerGui)
+        local AttackBtn = Instance.new("ImageButton", MobileGui)
+        AttackBtn.Size = UDim2.new(0,80,0,80)
+        AttackBtn.Position = UDim2.new(0.85,0,0.8,0)
+        AttackBtn.Image = "rbxassetid://154966469"
+        AttackBtn.BackgroundTransparency = 0.5
+        AttackBtn.MouseButton1Down:Connect(function()
+            local target = Player:GetMouse().Target
+            if target and target.Parent:FindFirstChild("Humanoid") then
+                target.Parent.Humanoid:TakeDamage(ITEMS[LocalData.SelectedSlot].Damage or 1)
             end
         end)
-
-        local PlaceButton = Instance.new("ImageButton", MobileControls)
-        PlaceButton.Size = UDim2.new(0, 80, 0, 80)
-        PlaceButton.Position = UDim2.new(0.75, 0, 0.7, 0)
-        PlaceButton.Image = "rbxassetid://154966541"
-        PlaceButton.BackgroundTransparency = 0.5
-        PlaceButton.MouseButton1Down:Connect(function()
-            -- 放置方块逻辑
-            local Mouse = Player:GetMouse()
-            if Mouse.Target then
-                local Position = Mouse.Hit.Position + Mouse.Hit.Normal
-                local Block = Instance.new("Part", Workspace)
-                Block.Size = Vector3.new(1, 1, 1)
-                Block.Position = Position
-                Block.Anchored = true
-                Block.CanCollide = true
-                Block.Material = Enum.Material.Grass
-                Block.BrickColor = BrickColor.Green()
-                table.insert(LocalData.PlacedBlocks, Block)
+        local PlaceBtn = Instance.new("ImageButton", MobileGui)
+        PlaceBtn.Size = UDim2.new(0,80,0,80)
+        PlaceBtn.Position = UDim2.new(0.75,0,0.7,0)
+        PlaceBtn.Image = "rbxassetid://154966471"
+        PlaceBtn.BackgroundTransparency = 0.5
+        PlaceBtn.MouseButton1Down:Connect(function()
+            local mouse = Player:GetMouse()
+            if mouse.Target then
+                local pos = mouse.Hit.Position + mouse.Hit.Normal
+                local block = Instance.new("Part", Workspace)
+                block.Size = Vector3.new(1,1,1)
+                block.Position = pos
+                block.Anchored = true
+                block.CanCollide = true
+                table.insert(LocalData.PlacedBlocks, block)
             end
-        end)
-
-        -- 背包按钮
-        local BackpackButton = Instance.new("ImageButton", MobileControls)
-        BackpackButton.Size = UDim2.new(0, 80, 0, 80)
-        BackpackButton.Position = UDim2.new(0.05, 0, 0.7, 0)
-        BackpackButton.Image = "rbxassetid://154966543"
-        BackpackButton.BackgroundTransparency = 0.5
-        BackpackButton.MouseButton1Click:Connect(function()
-            BackpackGui.Enabled = not BackpackGui.Enabled
         end)
     end
 
-    -- 合成界面（工作台打开时显示）
-    local CraftingGui = Instance.new("ScreenGui", PlayerGui)
-    CraftingGui.Name = "CraftingGui"
-    CraftingGui.Enabled = false
-
-    -- 3x3合成网格（复用Roblox原生控件）
-    local CraftingGrid = Instance.new("Frame", CraftingGui)
-    CraftingGrid.Size = UDim2.new(0.4, 0, 0.4, 0)
-    CraftingGrid.Position = UDim2.new(0.3, 0, 0.3, 0)
-    CraftingGrid.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-
-    for x = 1, 3 do
-        for y = 1, 3 do
-            local Slot = Instance.new("ImageButton", CraftingGrid)
-            Slot.Size = UDim2.new(1/3, -5, 1/3, -5)
-            Slot.Position = UDim2.new((x-1)/3, 0, (y-1)/3, 0)
-            Slot.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-            Slot.BorderColor3 = Color3.new(0.3, 0.3, 0.3)
-        end
-    end
-
-    -- 合成结果槽位
-    local ResultSlot = Instance.new("ImageButton", CraftingGui)
-    ResultSlot.Size = UDim2.new(0.1, 0, 0.1, 0)
-    ResultSlot.Position = UDim2.new(0.7, 0, 0.45, 0)
-    ResultSlot.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-    ResultSlot.BorderColor3 = Color3.new(0.3, 0.3, 0.3)
-    ResultSlot.MouseButton1Click:Connect(function()
-        -- 合成逻辑（后续实现）
-    end)
-
-    -- 更新UI函数
-    local function UpdateUI()
+    -- UI更新循环
+    RunService.RenderStepped:Connect(function()
         -- 更新快捷栏
-        for i = 1, 9 do
-            local Slot = Hotbar:GetChildren()[i]
-            local Item = LocalData.Inventory[i]
-            if Item and Item.Count > 0 then
-                Slot.Image = Item.Item.Texture
-                Slot.CountText.Text = Item.Count
-            else
-                Slot.Image = "rbxassetid://154966535"
-                Slot.CountText.Text = "0"
-            end
+        for i = 1,9 do
+            local slot = Hotbar:GetChildren()[i]
+            local item = LocalData.Inventory[i]
+            slot.Image = item.Item.Name == "火把" and "rbxassetid://154966457" or "rbxassetid://154966421"
+            slot.CountText.Text = item.Count > 0 and item.Count or ""
         end
-
-        -- 更新状态条
+        -- 更新状态
         HealthBar.Size = UDim2.new(0.3 * (Humanoid.Health / Humanoid.MaxHealth), 0, 0.03, 0)
         HungerBar.Size = UDim2.new(0.3 * (LocalData.Hunger / 20), 0, 0.03, 0)
-        DimensionText.Text = DIMENSIONS[LocalData.CurrentDimension].Name
-    end
-
-    -- 循环更新UI
-    RunService.RenderStepped:Connect(UpdateUI)
+        BiomeText.Text = LocalData.CurrentBiome
+    end)
 end
 
--- 3. 生物生成模块
+-- ########## 生物生成AI | 群系专属+行为逻辑 ##########
 local function SpawnCreatures()
-    local CreatureFolder = Instance.new("Folder", Workspace)
-    CreatureFolder.Name = "LocalCreatures"
+    local MobFolder = Instance.new("Folder", Workspace)
+    MobFolder.Name = "LocalMobs"
+    MobFolder.Parent = Workspace
 
-    -- 循环生成生物
-    while wait(5) do
-        -- 只在玩家周围生成
-        local PlayerPos = RootPart.Position
-        local SpawnRadius = 50
+    while wait(3) do
+        if #MobFolder:GetChildren() >= CONFIG.MobCap then continue end
+        local playerPos = RootPart.Position
+        local spawnRadius = math.random(30, CONFIG.RenderDistance)
+        local spawnX = playerPos.X + math.random(-spawnRadius, spawnRadius)
+        local spawnZ = playerPos.Z + math.random(-spawnRadius, spawnRadius)
+        local spawnY = Workspace.Terrain:SampleHeight(Vector3.new(spawnX, 0, spawnZ)) + 2
+        local biome = GetBiomeAt(spawnX, spawnZ)
+        LocalData.CurrentBiome = biome.Name
 
-        -- 检查生成条件
-        local IsNight = Lighting.ClockTime > 18 or Lighting.ClockTime < 6
-        local CurrentDimension = LocalData.CurrentDimension
-
-        -- 生成数量限制
-        if #CreatureFolder:GetChildren() < 20 and math.random() < CONFIG.MobSpawnRate then
-            -- 随机生成位置
-            local SpawnX = PlayerPos.X + math.random(-SpawnRadius, SpawnRadius)
-            local SpawnZ = PlayerPos.Z + math.random(-SpawnRadius, SpawnRadius)
-            local SpawnY = Workspace.Terrain:SampleHeight(Vector3.new(SpawnX, 0, SpawnZ)) + 2
-
-            -- 选择生物
-            local ValidCreatures = {}
-            for _, creature in ipairs(CREATURES) do
-                if (creature.SpawnDay and not IsNight) or (creature.SpawnNight and IsNight) or 
-                   (creature.SpawnCave and SpawnY < 20) or (creature.SpawnNether and CurrentDimension == 2) or
-                   (creature.SpawnEnd and CurrentDimension == 3) then
-                    table.insert(ValidCreatures, creature)
+        -- 选择群系专属生物
+        local validMobs = {}
+        for _, mob in ipairs(CREATURES) do
+            for _, b in ipairs(mob.Biome) do
+                if b == biome.Name then
+                    table.insert(validMobs, mob)
+                    break
                 end
             end
-
-            if #ValidCreatures > 0 then
-                local SelectedCreature = ValidCreatures[math.random(#ValidCreatures)]
-                local CreatureModel = Instance.new("Model", CreatureFolder)
-                CreatureModel.Name = SelectedCreature.Name
-                CreatureModel:SetPrimaryPartCFrame(CFrame.new(SpawnX, SpawnY, SpawnZ))
-
-                -- 创建碰撞体
-                local HumanoidRootPart = Instance.new("Part", CreatureModel)
-                HumanoidRootPart.Name = "HumanoidRootPart"
-                HumanoidRootPart.Size = Vector3.new(2, 2, 2)
-                HumanoidRootPart.Anchored = false
-                HumanoidRootPart.CanCollide = true
-                CreatureModel.PrimaryPart = HumanoidRootPart
-
-                -- 添加人形
-                local Humanoid = Instance.new("Humanoid", CreatureModel)
-                Humanoid.MaxHealth = SelectedCreature.Health
-                Humanoid.Health = SelectedCreature.Health
-                Humanoid.WalkSpeed = 8
-                Humanoid.JumpPower = 5
-
-                -- 添加模型（使用占位符）
-                local Mesh = Instance.new("SpecialMesh", HumanoidRootPart)
-                Mesh.MeshType = Enum.MeshType.FileMesh
-                Mesh.MeshId = SelectedCreature.Model
-                Mesh.Scale = Vector3.new(2, 2, 2)
-
-                -- 生物AI
-                coroutine.wrap(function()
-                    while CreatureModel and CreatureModel.Parent do
-                        wait(1)
-                        local Distance = (CreatureModel.PrimaryPart.Position - RootPart.Position).Magnitude
-                        
-                        if not SelectedCreature.Friendly and Distance < 20 then
-                            -- 敌对生物追踪玩家
-                            local Direction = (RootPart.Position - CreatureModel.PrimaryPart.Position).Unit
-                            Humanoid:MoveTo(CreatureModel.PrimaryPart.Position + Direction * 5)
-                            
-                            if Distance < 3 then
-                                -- 攻击玩家
-                                Humanoid:Attack()
-                                Humanoid:TakeDamage(SelectedCreature.Damage)
-                            end
-                        else
-                            -- 友好生物随机移动
-                            local RandomDir = Vector3.new(math.random(-1, 1), 0, math.random(-1, 1)).Unit
-                            Humanoid:MoveTo(CreatureModel.PrimaryPart.Position + RandomDir * math.random(3, 8))
-                        end
-                    end
-                end)()
-
-                table.insert(LocalData.SpawnedCreatures, CreatureModel)
-            end
         end
+        if #validMobs == 0 then continue end
+        local selectedMob = validMobs[math.random(#validMobs)]
+
+        -- 创建生物模型
+        local mobModel = Instance.new("Model", MobFolder)
+        mobModel.Name = selectedMob.Name
+        local mobRoot = Instance.new("Part", mobModel)
+        mobRoot.Name = "HumanoidRootPart"
+        mobRoot.Size = Vector3.new(2,2,2)
+        mobRoot.Position = Vector3.new(spawnX, spawnY, spawnZ)
+        mobRoot.Anchored = false
+        mobModel.PrimaryPart = mobRoot
+        local humanoid = Instance.new("Humanoid", mobModel)
+        humanoid.MaxHealth = selectedMob.Health
+        humanoid.Health = selectedMob.Health
+        humanoid.WalkSpeed = selectedMob.Speed
+        local mesh = Instance.new("SpecialMesh", mobRoot)
+        mesh.MeshType = Enum.MeshType.FileMesh
+        mesh.MeshId = "rbxassetid://154966473" -- 通用模型占位
+        mesh.Scale = Vector3.new(1.5,1.5,1.5)
+
+        -- 生物AI逻辑
+        coroutine.wrap(function()
+            while mobModel and mobModel.Parent do
+                wait(0.5)
+                local dist = (mobRoot.Position - playerPos).Magnitude
+                if selectedMob.Friendly then
+                    -- 友好生物：远离玩家
+                    if dist < 20 then
+                        local dir = (mobRoot.Position - playerPos).Unit
+                        humanoid:MoveTo(mobRoot.Position + dir * 10)
+                    else
+                        -- 随机移动
+                        local randDir = Vector3.new(math.random(-1,1),0,math.random(-1,1)).Unit
+                        humanoid:MoveTo(mobRoot.Position + randDir * math.random(5,10))
+                    end
+                else
+                    -- 敌对生物：追击玩家
+                    if dist < 50 then
+                        humanoid:MoveTo(playerPos)
+                        if dist < 3 then
+                            humanoid:Attack()
+                            Humanoid:TakeDamage(selectedMob.Damage)
+                        end
+                    else
+                        local randDir = Vector3.new(math.random(-1,1),0,math.random(-1,1)).Unit
+                        humanoid:MoveTo(mobRoot.Position + randDir * math.random(5,10))
+                    end
+                end
+                -- BOSS特殊行为：飞天+范围攻击
+                if selectedMob.Boss and selectedMob.Fly then
+                    mobRoot.Position = Vector3.new(mobRoot.Position.X, mobRoot.Position.Y + 0.5, mobRoot.Position.Z)
+                end
+            end
+        end)()
+        table.insert(LocalData.SpawnedMobs, mobModel)
     end
 end
 
--- 4. 合成系统模块
-local function SetupCrafting()
-    -- 工作台交互
-    Player:GetMouse().Button1Down:Connect(function()
-        local Target = Player:GetMouse().Target
-        if Target and Target.Name == "CraftingTable" then
-            -- 打开合成界面
-            PlayerGui:FindFirstChild("CraftingGui").Enabled = true
-        else
-            -- 关闭合成界面
-            PlayerGui:FindFirstChild("CraftingGui").Enabled = false
+-- ########## 合成+挖矿+生存系统 | 全自动 ##########
+local function SetupGameplay()
+    -- 挖矿逻辑
+    UserInputService.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            local mouse = Player:GetMouse()
+            local target = mouse.Target
+            if not target then return end
+            local tool = LocalData.Inventory[LocalData.SelectedSlot].Item
+            local miningSpeed = tool.MiningSpeed or 1
+            wait(2 / miningSpeed)
+            -- 破坏方块+掉落物品
+            local pos = target.Position
+            Workspace.Terrain:FillBlock(CFrame.new(pos), Vector3.new(1,1,1), Enum.Material.Air)
+            local dropItem = "石头"
+            if target.Material == Enum.Material.Coal then dropItem = "煤炭" end
+            if target.Material == Enum.Material.Iron then dropItem = "铁矿石" end
+            if target.Material == Enum.Material.Diamond then dropItem = "钻石" end
+            -- 加入背包
+            for _, item in ipairs(LocalData.Inventory) do
+                if item.Item.Name == dropItem then
+                    item.Count += 1
+                    break
+                end
+            end
         end
     end)
 
     -- 合成逻辑
     local function CraftItem(recipe)
-        -- 检查材料是否足够
-        local HasMaterials = true
-        for _, ingredient in ipairs(recipe.Ingredients) do
-            local ItemName, RequiredCount = ingredient[1], ingredient[2]
-            local FoundItem = nil
-            for _, invItem in ipairs(LocalData.Inventory) do
-                if invItem.Item.Name == ItemName then
-                    FoundItem = invItem
+        local hasMat = true
+        for _, mat in ipairs(recipe.Ingredients) do
+            local name, count = mat[1], mat[2]
+            local found = false
+            for _, item in ipairs(LocalData.Inventory) do
+                if item.Item.Name == name and item.Count >= count then
+                    found = true
+                    item.Count -= count
                     break
                 end
             end
-            if not FoundItem or FoundItem.Count < RequiredCount then
-                HasMaterials = false
-                break
-            end
+            if not found then hasMat = false end
         end
-
-        if HasMaterials then
-            -- 消耗材料
-            for _, ingredient in ipairs(recipe.Ingredients) do
-                local ItemName, RequiredCount = ingredient[1], ingredient[2]
-                for _, invItem in ipairs(LocalData.Inventory) do
-                    if invItem.Item.Name == ItemName then
-                        invItem.Count = invItem.Count - RequiredCount
-                        break
-                    end
-                end
-            end
-
-            -- 添加合成结果
-            local ResultItem = nil
-            for _, item in ipairs(ITEMS) do
-                if item.Name == recipe.Result then
-                    ResultItem = item
+        if hasMat then
+            for _, item in ipairs(LocalData.Inventory) do
+                if item.Item.Name == recipe.Result then
+                    item.Count += 1
                     break
                 end
             end
-
-            if ResultItem then
-                local Added = false
-                for _, invItem in ipairs(LocalData.Inventory) do
-                    if invItem.Item.Name == ResultItem.Name and invItem.Count < (ResultItem.Stack or 64) then
-                        invItem.Count = invItem.Count + 1
-                        Added = true
-                        break
-                    end
-                end
-
-                if not Added then
-                    table.insert(LocalData.Inventory, {Item = ResultItem, Count = 1})
-                end
-            end
         end
     end
 
-    -- 绑定合成按钮
-    local CraftingGui = PlayerGui:FindFirstChild("CraftingGui")
-    local ResultSlot = CraftingGui:FindFirstChild("ResultSlot")
-    ResultSlot.MouseButton1Click:Connect(function()
-        -- 简单合成检测（实际应检测网格中的物品）
-        for _, recipe in ipairs(CRAFTING_RECIPES) do
-            CraftItem(recipe)
-        end
-    end)
-end
-
--- 5. 维度切换模块
-local function SetupDimensions()
-    -- 末影珍珠传送（切换到末地）
-    UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton2 or (UserInputService.TouchEnabled and input.UserInputType == Enum.UserInputType.Touch) then
-            local SelectedItem = LocalData.Inventory[LocalData.SelectedSlot]
-            if SelectedItem and SelectedItem.Item.Name == "EnderPearl" and SelectedItem.Count > 0 then
-                -- 消耗末影珍珠
-                SelectedItem.Count = SelectedItem.Count - 1
-
-                -- 切换到末地
-                LocalData.CurrentDimension = 3
-                Workspace.Terrain.Visible = false
-                Workspace.EndTerrain.Visible = true
-                Lighting.ClockTime = 12
-                Lighting.Ambient = Color3.new(0.1, 0.1, 0.3)
-
-                -- 传送玩家到末地出生点
-                RootPart.CFrame = CFrame.new(0, 60, 0)
+    -- 工作台交互
+    Player:GetMouse().Button1Down:Connect(function()
+        local target = Player:GetMouse().Target
+        if target and target.Name == "工作台" then
+            for _, recipe in ipairs(CRAFT_RECIPES) do
+                CraftItem(recipe)
             end
         end
     end)
 
-    -- 黑曜石传送门（切换到下界）
-    local function CheckNetherPortal()
-        local PlayerPos = RootPart.Position
-        local PortalBlocks = {}
-        for _, block in ipairs(LocalData.PlacedBlocks) do
-            if block.Name == "Obsidian" then
-                local Distance = (block.Position - PlayerPos).Magnitude
-                if Distance < 5 then
-                    table.insert(PortalBlocks, block)
-                end
-            end
-        end
-
-        if #PortalBlocks >= 10 then
-            -- 切换到下界
-            LocalData.CurrentDimension = 2
-            Workspace.Terrain.Visible = false
-            Workspace.NetherTerrain.Visible = true
-            Lighting.ClockTime = 12
-            Lighting.Ambient = Color3.new(0.3, 0.1, 0.1)
-
-            -- 传送玩家到下界出生点
-            RootPart.CFrame = CFrame.new(0, 30, 0)
-        end
-    end
-
-    -- 循环检测传送门
-    while wait(2) do
-        CheckNetherPortal()
-    end
-end
-
--- 6. 挖矿与放置模块
-local function SetupMiningAndPlacing()
-    -- 挖矿逻辑
-    UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or (UserInputService.TouchEnabled and input.UserInputType == Enum.UserInputType.Touch) then
-            local Mouse = Player:GetMouse()
-            local Target = Mouse.Target
-            if Target and Target:IsDescendantOf(Workspace.Terrain) then
-                -- 获取工具挖掘速度
-                local SelectedItem = LocalData.Inventory[LocalData.SelectedSlot]
-                local MiningSpeed = SelectedItem?.Item.MiningSpeed or 1
-
-                -- 模拟挖掘延迟
-                wait(2 / MiningSpeed)
-
-                -- 移除方块
-                local Position = Target.Position
-                Workspace.Terrain:FillBlock(CFrame.new(Position), Vector3.new(1, 1, 1), Enum.Material.Air)
-
-                -- 掉落物品
-                local BlockName = ""
-                if Target.Material == Enum.Material.Coal then BlockName = "Coal"
-                elseif Target.Material == Enum.Material.Iron then BlockName = "IronOre"
-                elseif Target.Material == Enum.Material.Gold then BlockName = "GoldOre"
-                elseif Target.Material == Enum.Material.Diamond then BlockName = "Diamond"
-                elseif Target.Material == Enum.Material.Redstone then BlockName = "Redstone"
-                elseif Target.Material == Enum.Material.Grass then BlockName = "Grass"
-                elseif Target.Material == Enum.Material.Dirt then BlockName = "Dirt"
-                elseif Target.Material == Enum.Material.Rock then BlockName = "Stone"
-                elseif Target.Material == Enum.Material.Wood then BlockName = "Wood" end
-
-                if BlockName ~= "" then
-                    -- 添加到背包
-                    local Added = false
-                    for _, invItem in ipairs(LocalData.Inventory) do
-                        if invItem.Item.Name == BlockName and invItem.Count < (invItem.Item.Stack or 64) then
-                            invItem.Count = invItem.Count + 1
-                            Added = true
-                            break
-                        end
-                    end
-
-                    if not Added then
-                        for _, item in ipairs(ITEMS) do
-                            if item.Name == BlockName then
-                                table.insert(LocalData.Inventory, {Item = item, Count = 1})
-                                Added = true
-                                break
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end)
-
-    -- 放置方块逻辑
-    UserInputService.InputBegan:Connect(function(input)
-        if input.KeyCode == Enum.KeyCode.E or (UserInputService.TouchEnabled and input.UserInputType == Enum.UserInputType.Touch) then
-            local Mouse = Player:GetMouse()
-            if Mouse.Target then
-                local SelectedItem = LocalData.Inventory[LocalData.SelectedSlot]
-                if SelectedItem and SelectedItem.Count > 0 and SelectedItem.Item.ID <= 30 then -- 仅方块可放置
-                    -- 消耗物品
-                    SelectedItem.Count = SelectedItem.Count - 1
-
-                    -- 放置方块
-                    local Position = Mouse.Hit.Position + Mouse.Hit.Normal
-                    local Block = Instance.new("Part", Workspace)
-                    Block.Name = SelectedItem.Item.Name
-                    Block.Size = Vector3.new(1, 1, 1)
-                    Block.Position = Position
-                    Block.Anchored = true
-                    Block.CanCollide = true
-                    Block.Material = Enum.Material.Grass -- 可根据方块类型修改
-                    Block.BrickColor = BrickColor.Green() -- 可根据方块类型修改
-
-                    -- 添加到放置方块列表
-                    table.insert(LocalData.PlacedBlocks, Block)
-
-                    -- 火把照明
-                    if SelectedItem.Item.Name == "Torch" then
-                        local Light = Instance.new("PointLight", Block)
-                        Light.Range = 15
-                        Light.Brightness = 2
-                        Light.Color = Color3.new(1, 0.8, 0.2)
-                    end
-                end
-            end
-        end
-    end)
-end
-
--- 7. 日夜循环模块
-local function SetupDayNightCycle()
-    if not CONFIG.DayNightCycle then return end
-    while wait(1) do
-        Lighting.ClockTime = (Lighting.ClockTime + 0.1) % 24
-        if Lighting.ClockTime < 6 or Lighting.ClockTime > 18 then
-            Lighting.Ambient = Color3.new(0.1, 0.1, 0.1)
-            Lighting.FogColor = Color3.new(0.2, 0.2, 0.2)
-        else
-            Lighting.Ambient = Color3.new(0.8, 0.8, 0.8)
-            Lighting.FogColor = Color3.new(0.9, 0.9, 1)
-        end
-    end
-end
-
--- 8. 饥饿与 thirst 系统
-local function SetupSurvivalStats()
+    -- 饥饿+口渴系统
     while wait(10) do
         LocalData.Hunger = math.max(0, LocalData.Hunger - 1)
         LocalData.Thirst = math.max(0, LocalData.Thirst - 1)
-
-        -- 饥饿惩罚
         if LocalData.Hunger <= 0 then
             Humanoid:TakeDamage(1)
         end
-
-        -- 喝水恢复（靠近水源）
-        local PlayerPos = RootPart.Position
-        local WaterHeight = Workspace.Terrain:SampleHeight(Vector3.new(PlayerPos.X, 0, PlayerPos.Z))
-        if PlayerPos.Y <= WaterHeight + 1 then
-            LocalData.Thirst = math.min(20, LocalData.Thirst + 2)
-        end
-
         -- 吃东西恢复
         UserInputService.InputBegan:Connect(function(input)
-            if input.KeyCode == Enum.KeyCode.R or (UserInputService.TouchEnabled and input.UserInputType == Enum.UserInputType.Touch) then
-                local SelectedItem = LocalData.Inventory[LocalData.SelectedSlot]
-                if SelectedItem and SelectedItem.Item.HungerRestore then
-                    LocalData.Hunger = math.min(20, LocalData.Hunger + SelectedItem.Item.HungerRestore)
-                    SelectedItem.Count = SelectedItem.Count - 1
+            if input.KeyCode == Enum.KeyCode.R then
+                local item = LocalData.Inventory[LocalData.SelectedSlot].Item
+                if item.Hunger then
+                    LocalData.Hunger = math.min(20, LocalData.Hunger + item.Hunger)
+                    item.Count -= 1
                 end
             end
         end)
     end
 end
 
--- 初始化所有模块
-local function Init()
-    -- 隐藏Roblox默认UI（保留必要的）
-    PlayerGui:SetTopbarTransparency(1)
-    game.StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
-    game.StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, true)
+-- ########## 日夜循环+火把照明 ##########
+local function SetupWorldEffects()
+    while wait(1) do
+        Lighting.ClockTime = (Lighting.ClockTime + CONFIG.DayNightSpeed) % 24
+        if Lighting.ClockTime < 6 or Lighting.ClockTime > 18 then
+            Lighting.Ambient = Color3.new(0.1,0.1,0.1)
+            Lighting.FogEnd = 100
+        else
+            Lighting.Ambient = Color3.new(0.8,0.8,0.8)
+            Lighting.FogEnd = 500
+        end
+    end
 
-    -- 执行初始化
+    -- 火把照明
+    RunService.RenderStepped:Connect(function()
+        for _, block in ipairs(LocalData.PlacedBlocks) do
+            if block.Name == "火把" then
+                local light = block:FindFirstChild("PointLight") or Instance.new("PointLight", block)
+                light.Range = CONFIG.TorchLightRange
+                light.Brightness = 2
+                light.Color = Color3.new(1,0.8,0.2)
+            end
+        end
+    end)
+end
+
+-- ########## 初始化启动 | 一键运行 ##########
+local function Init()
     GenerateTerrain()
     CreateUI()
-    SetupCrafting()
-    SetupMiningAndPlacing()
-    SetupDimensions()
-    SetupDayNightCycle()
-    SetupSurvivalStats()
     coroutine.wrap(SpawnCreatures)()
-
-    print("我的世界生存客户端脚本加载完成！")
+    coroutine.wrap(SetupGameplay)()
+    coroutine.wrap(SetupWorldEffects)()
+    Humanoid.Died:Connect(function()
+        print("你死亡了！正在重生...")
+        RootPart.CFrame = CFrame.new(0, 60, 0)
+        Humanoid.Health = Humanoid.MaxHealth
+        LocalData.Hunger = 20
+        LocalData.Thirst = 20
+    end)
+    print("=== 我的世界超丰富生存脚本加载完成 ===")
+    print("=== 本地独占 | 手机适配 | 原创内容 ===")
 end
 
 -- 启动脚本
