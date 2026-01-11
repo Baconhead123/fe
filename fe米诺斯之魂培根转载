@@ -1,612 +1,615 @@
--- 坠落之神 - 客户端脚本
--- 放在 StarterPlayerScripts 中
+-- 高级UI模板 - 主脚本
+-- 将此脚本放入StarterGui中
 
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
-local ContextActionService = game:GetService("ContextActionService")
 
 local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
-local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+local gui = script.Parent
 
--- 技能配置
-local skillsConfig = {
-    {
-        name = "虚空冲击",
-        key = "One",
-        cooldown = 5,
-        description = "向前释放虚空能量",
-        icon = "rbxassetid://10723361954" -- 示例图标ID
-    },
-    {
-        name = "暗影突袭",
-        key = "Two",
-        cooldown = 8,
-        description = "快速突袭到目标位置",
-        icon = "rbxassetid://10723362231"
-    },
-    {
-        name = "引力场",
-        key = "Three",
-        cooldown = 12,
-        description = "创造引力场吸引敌人",
-        icon = "rbxassetid://10723362415"
-    },
-    {
-        name = "神之审判",
-        key = "Four",
-        cooldown = 20,
-        description = "释放神圣能量审判敌人",
-        icon = "rbxassetid://10723362678"
-    }
-}
+-- 创建主UI框架
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "高级UITemplate"
+mainFrame.Size = UDim2.new(0, 500, 0, 600)
+mainFrame.Position = UDim2.new(0.5, -250, 0.5, -300)
+mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+mainFrame.BackgroundColor3 = Color3.fromRGB(10, 15, 30)
+mainFrame.BackgroundTransparency = 0.1
+mainFrame.BorderSizePixel = 0
 
--- 技能冷却状态
-local skillCooldowns = {}
-local isFlying = false
-local isAttacking = false
-local flightVelocity = nil
+-- 添加霓虹发光效果
+local glow = Instance.new("ImageLabel")
+glow.Name = "GlowEffect"
+glow.Size = UDim2.new(1, 40, 1, 40)
+glow.Position = UDim2.new(0, -20, 0, -20)
+glow.BackgroundTransparency = 1
+glow.Image = "rbxassetid://5553946656"
+glow.ImageColor3 = Color3.fromRGB(0, 100, 255)
+glow.ImageTransparency = 0.7
+glow.ScaleType = Enum.ScaleType.Slice
+glow.SliceCenter = Rect.new(100, 100, 100, 100)
+glow.ZIndex = 0
+glow.Parent = mainFrame
 
--- 创建UI界面
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "FallenGodUI"
-screenGui.Parent = player.PlayerGui
+-- 创建标题栏
+local titleBar = Instance.new("Frame")
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 40)
+titleBar.BackgroundColor3 = Color3.fromRGB(15, 20, 40)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
 
--- 技能栏容器
-local skillsFrame = Instance.new("Frame")
-skillsFrame.Name = "SkillsFrame"
-skillsFrame.Size = UDim2.new(0, 400, 0, 100)
-skillsFrame.Position = UDim2.new(0.5, -200, 1, -120)
-skillsFrame.AnchorPoint = Vector2.new(0.5, 0)
-skillsFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-skillsFrame.BackgroundTransparency = 0.3
-skillsFrame.BorderSizePixel = 0
-skillsFrame.Parent = screenGui
+-- 添加标题栏渐变效果
+local titleGradient = Instance.new("UIGradient")
+titleGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 80, 200)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 40, 100))
+})
+titleGradient.Rotation = 90
+titleGradient.Parent = titleBar
 
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 12)
-UICorner.Parent = skillsFrame
+-- 标题文本
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "Title"
+titleLabel.Size = UDim2.new(0, 200, 1, 0)
+titleLabel.Position = UDim2.new(0, 10, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "高级UI模板"
+titleLabel.TextColor3 = Color3.fromRGB(200, 230, 255)
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 22
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
 
--- 创建技能按钮
-local skillButtons = {}
-for i, skill in ipairs(skillsConfig) do
-    local buttonFrame = Instance.new("Frame")
-    buttonFrame.Name = skill.name .. "Button"
-    buttonFrame.Size = UDim2.new(0, 80, 0, 80)
-    buttonFrame.Position = UDim2.new(0, 20 + (i-1)*90, 0, 10)
-    buttonFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-    buttonFrame.BorderSizePixel = 0
-    buttonFrame.Parent = skillsFrame
-    
-    local buttonCorner = Instance.new("UICorner")
-    buttonCorner.CornerRadius = UDim.new(0, 8)
-    buttonCorner.Parent = buttonFrame
-    
-    local icon = Instance.new("ImageLabel")
-    icon.Name = "Icon"
-    icon.Size = UDim2.new(0, 50, 0, 50)
-    icon.Position = UDim2.new(0.5, -25, 0.2, 0)
-    icon.BackgroundTransparency = 1
-    icon.Image = skill.icon
-    icon.Parent = buttonFrame
-    
-    local keyLabel = Instance.new("TextLabel")
-    keyLabel.Name = "KeyLabel"
-    keyLabel.Size = UDim2.new(1, 0, 0, 20)
-    keyLabel.Position = UDim2.new(0, 0, 0.7, 0)
-    keyLabel.BackgroundTransparency = 1
-    keyLabel.Text = "[" .. skill.key .. "]"
-    keyLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    keyLabel.Font = Enum.Font.GothamBold
-    keyLabel.TextSize = 14
-    keyLabel.Parent = buttonFrame
-    
-    local nameLabel = Instance.new("TextLabel")
-    nameLabel.Name = "NameLabel"
-    nameLabel.Size = UDim2.new(1, 0, 0, 20)
-    nameLabel.Position = UDim2.new(0, 0, 0.85, 0)
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.Text = skill.name
-    nameLabel.TextColor3 = Color3.fromRGB(200, 200, 255)
-    nameLabel.Font = Enum.Font.Gotham
-    nameLabel.TextSize = 12
-    nameLabel.Parent = buttonFrame
-    
-    -- 冷却遮罩
-    local cooldownOverlay = Instance.new("Frame")
-    cooldownOverlay.Name = "CooldownOverlay"
-    cooldownOverlay.Size = UDim2.new(1, 0, 1, 0)
-    cooldownOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    cooldownOverlay.BackgroundTransparency = 0.7
-    cooldownOverlay.Visible = false
-    cooldownOverlay.ZIndex = 2
-    cooldownOverlay.Parent = buttonFrame
-    
-    local cooldownCorner = Instance.new("UICorner")
-    cooldownCorner.CornerRadius = UDim.new(0, 8)
-    cooldownCorner.Parent = cooldownOverlay
-    
-    local cooldownText = Instance.new("TextLabel")
-    cooldownText.Name = "CooldownText"
-    cooldownText.Size = UDim2.new(1, 0, 1, 0)
-    cooldownText.BackgroundTransparency = 1
-    cooldownText.Text = ""
-    cooldownText.TextColor3 = Color3.fromRGB(255, 100, 100)
-    cooldownText.Font = Enum.Font.GothamBold
-    cooldownText.TextSize = 18
-    cooldownText.ZIndex = 3
-    cooldownText.Parent = cooldownOverlay
-    
-    skillButtons[skill.name] = {
-        frame = buttonFrame,
-        overlay = cooldownOverlay,
-        cooldownText = cooldownText,
-        config = skill
-    }
+-- 控制按钮容器
+local controlButtons = Instance.new("Frame")
+controlButtons.Name = "ControlButtons"
+controlButtons.Size = UDim2.new(0, 100, 1, 0)
+controlButtons.Position = UDim2.new(1, -110, 0, 0)
+controlButtons.BackgroundTransparency = 1
+controlButtons.Parent = titleBar
+
+-- 最小化按钮
+local minimizeBtn = Instance.new("ImageButton")
+minimizeBtn.Name = "Minimize"
+minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+minimizeBtn.Position = UDim2.new(0, 0, 0.5, -15)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 70)
+minimizeBtn.BackgroundTransparency = 0.5
+minimizeBtn.Image = "rbxassetid://3926305904"
+minimizeBtn.ImageColor3 = Color3.fromRGB(150, 200, 255)
+minimizeBtn.ImageRectOffset = Vector2.new(964, 324)
+minimizeBtn.ImageRectSize = Vector2.new(36, 36)
+minimizeBtn.Parent = controlButtons
+
+-- 关闭按钮
+local closeBtn = Instance.new("ImageButton")
+closeBtn.Name = "Close"
+closeBtn.Size = UDim2.new(0, 30, 0, 30)
+closeBtn.Position = UDim2.new(0, 40, 0.5, -15)
+closeBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 70)
+closeBtn.BackgroundTransparency = 0.5
+closeBtn.Image = "rbxassetid://3926305904"
+closeBtn.ImageColor3 = Color3.fromRGB(255, 100, 100)
+closeBtn.ImageRectOffset = Vector2.new(284, 4)
+closeBtn.ImageRectSize = Vector2.new(24, 24)
+closeBtn.Parent = controlButtons
+
+-- 内容区域
+local contentFrame = Instance.new("ScrollingFrame")
+contentFrame.Name = "Content"
+contentFrame.Size = UDim2.new(1, -20, 1, -60)
+contentFrame.Position = UDim2.new(0, 10, 0, 50)
+contentFrame.BackgroundTransparency = 1
+contentFrame.ScrollBarThickness = 4
+contentFrame.ScrollBarImageColor3 = Color3.fromRGB(0, 100, 200)
+contentFrame.CanvasSize = UDim2.new(0, 0, 0, 800)
+contentFrame.Parent = mainFrame
+
+-- UI元素示例容器
+local uiExamples = Instance.new("Frame")
+uiExamples.Name = "UIExamples"
+uiExamples.Size = UDim2.new(1, 0, 0, 750)
+uiExamples.BackgroundTransparency = 1
+uiExamples.Parent = contentFrame
+
+-- 添加示例UI元素
+local exampleTitle = Instance.new("TextLabel")
+exampleTitle.Name = "ExampleTitle"
+exampleTitle.Size = UDim2.new(1, 0, 0, 40)
+exampleTitle.BackgroundTransparency = 1
+exampleTitle.Text = "UI 元素示例"
+exampleTitle.TextColor3 = Color3.fromRGB(200, 230, 255)
+exampleTitle.Font = Enum.Font.GothamBold
+exampleTitle.TextSize = 24
+exampleTitle.TextXAlignment = Enum.TextXAlignment.Center
+exampleTitle.Parent = uiExamples
+
+-- 按钮示例
+local buttonExample = Instance.new("TextButton")
+buttonExample.Name = "ExampleButton"
+buttonExample.Size = UDim2.new(1, -40, 0, 50)
+buttonExample.Position = UDim2.new(0, 20, 0, 60)
+buttonExample.BackgroundColor3 = Color3.fromRGB(20, 60, 120)
+buttonExample.BackgroundTransparency = 0.3
+buttonExample.Text = "动画按钮示例"
+buttonExample.TextColor3 = Color3.fromRGB(220, 240, 255)
+buttonExample.Font = Enum.Font.Gotham
+buttonExample.TextSize = 18
+buttonExample.Parent = uiExamples
+
+-- 添加按钮动画效果
+local buttonGlow = Instance.new("Frame")
+buttonGlow.Name = "ButtonGlow"
+buttonGlow.Size = UDim2.new(1, 0, 1, 0)
+buttonGlow.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+buttonGlow.BackgroundTransparency = 0.8
+buttonGlow.BorderSizePixel = 0
+buttonGlow.ZIndex = -1
+buttonGlow.Parent = buttonExample
+
+-- 滑动条示例
+local sliderExample = Instance.new("Frame")
+sliderExample.Name = "SliderExample"
+sliderExample.Size = UDim2.new(1, -40, 0, 60)
+sliderExample.Position = UDim2.new(0, 20, 0, 130)
+sliderExample.BackgroundTransparency = 1
+sliderExample.Parent = uiExamples
+
+local sliderLabel = Instance.new("TextLabel")
+sliderLabel.Size = UDim2.new(1, 0, 0, 20)
+sliderLabel.BackgroundTransparency = 1
+sliderLabel.Text = "音量控制"
+sliderLabel.TextColor3 = Color3.fromRGB(180, 220, 255)
+sliderLabel.Font = Enum.Font.Gotham
+sliderLabel.TextSize = 16
+sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
+sliderLabel.Parent = sliderExample
+
+local sliderBackground = Instance.new("Frame")
+sliderBackground.Name = "SliderBackground"
+sliderBackground.Size = UDim2.new(1, 0, 0, 10)
+sliderBackground.Position = UDim2.new(0, 0, 0, 30)
+sliderBackground.BackgroundColor3 = Color3.fromRGB(30, 40, 70)
+sliderBackground.BorderSizePixel = 0
+sliderBackground.Parent = sliderExample
+
+local sliderFill = Instance.new("Frame")
+sliderFill.Name = "SliderFill"
+sliderFill.Size = UDim2.new(0.7, 0, 1, 0)
+sliderFill.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+sliderFill.BorderSizePixel = 0
+sliderFill.Parent = sliderBackground
+
+local sliderHandle = Instance.new("Frame")
+sliderHandle.Name = "SliderHandle"
+sliderHandle.Size = UDim2.new(0, 20, 0, 20)
+sliderHandle.Position = UDim2.new(0.7, -10, 0.5, -10)
+sliderHandle.BackgroundColor3 = Color3.fromRGB(220, 240, 255)
+sliderHandle.BorderSizePixel = 0
+sliderHandle.Parent = sliderExample
+
+-- 开关示例
+local toggleExample = Instance.new("Frame")
+toggleExample.Name = "ToggleExample"
+toggleExample.Size = UDim2.new(1, -40, 0, 40)
+toggleExample.Position = UDim2.new(0, 20, 0, 210)
+toggleExample.BackgroundTransparency = 1
+toggleExample.Parent = uiExamples
+
+local toggleLabel = Instance.new("TextLabel")
+toggleLabel.Size = UDim2.new(0.7, 0, 1, 0)
+toggleLabel.BackgroundTransparency = 1
+toggleLabel.Text = "高级特效"
+toggleLabel.TextColor3 = Color3.fromRGB(180, 220, 255)
+toggleLabel.Font = Enum.Font.Gotham
+toggleLabel.TextSize = 16
+toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+toggleLabel.Parent = toggleExample
+
+local toggleBackground = Instance.new("Frame")
+toggleBackground.Name = "ToggleBackground"
+toggleBackground.Size = UDim2.new(0, 50, 0, 25)
+toggleBackground.Position = UDim2.new(1, -50, 0.5, -12.5)
+toggleBackground.BackgroundColor3 = Color3.fromRGB(40, 50, 80)
+toggleBackground.BorderSizePixel = 0
+toggleBackground.Parent = toggleExample
+
+local toggleSwitch = Instance.new("Frame")
+toggleSwitch.Name = "ToggleSwitch"
+toggleSwitch.Size = UDim2.new(0, 23, 1, -4)
+toggleSwitch.Position = UDim2.new(0, 2, 0, 2)
+toggleSwitch.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+toggleSwitch.BorderSizePixel = 0
+toggleSwitch.Parent = toggleBackground
+
+-- 卡片示例
+local cardExample = Instance.new("Frame")
+cardExample.Name = "CardExample"
+cardExample.Size = UDim2.new(1, -40, 0, 120)
+cardExample.Position = UDim2.new(0, 20, 0, 270)
+cardExample.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
+cardExample.BackgroundTransparency = 0.2
+cardExample.Parent = uiExamples
+
+local cardTitle = Instance.new("TextLabel")
+cardTitle.Size = UDim2.new(1, -20, 0, 30)
+cardTitle.Position = UDim2.new(0, 10, 0, 10)
+cardTitle.BackgroundTransparency = 1
+cardTitle.Text = "高级功能卡片"
+cardTitle.TextColor3 = Color3.fromRGB(220, 240, 255)
+cardTitle.Font = Enum.Font.GothamBold
+cardTitle.TextSize = 18
+cardTitle.TextXAlignment = Enum.TextXAlignment.Left
+cardTitle.Parent = cardExample
+
+local cardDesc = Instance.new("TextLabel")
+cardDesc.Size = UDim2.new(1, -20, 0, 60)
+cardDesc.Position = UDim2.new(0, 10, 0, 45)
+cardDesc.BackgroundTransparency = 1
+cardDesc.Text = "这是一个高级UI卡片示例，展示了现代设计风格与动画效果的结合。"
+cardDesc.TextColor3 = Color3.fromRGB(180, 210, 240)
+cardDesc.Font = Enum.Font.Gotham
+cardDesc.TextSize = 14
+cardDesc.TextWrapped = true
+cardDesc.TextXAlignment = Enum.TextXAlignment.Left
+cardDesc.Parent = cardExample
+
+-- 添加圆角效果
+local function addCornerRadius(obj, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius)
+    corner.Parent = obj
 end
 
--- 能量条
-local energyBar = Instance.new("Frame")
-energyBar.Name = "EnergyBar"
-energyBar.Size = UDim2.new(0, 300, 0, 20)
-energyBar.Position = UDim2.new(0.5, -150, 1, -160)
-energyBar.AnchorPoint = Vector2.new(0.5, 0)
-energyBar.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-energyBar.BorderSizePixel = 0
-energyBar.Parent = screenGui
+addCornerRadius(mainFrame, 12)
+addCornerRadius(titleBar, 12)
+addCornerRadius(buttonExample, 8)
+addCornerRadius(sliderBackground, 5)
+addCornerRadius(sliderHandle, 10)
+addCornerRadius(toggleBackground, 12)
+addCornerRadius(toggleSwitch, 10)
+addCornerRadius(cardExample, 10)
+addCornerRadius(minimizeBtn, 15)
+addCornerRadius(closeBtn, 15)
 
-local energyBarCorner = Instance.new("UICorner")
-energyBarCorner.CornerRadius = UDim.new(0, 10)
-energyBarCorner.Parent = energyBar
-
-local energyFill = Instance.new("Frame")
-energyFill.Name = "EnergyFill"
-energyFill.Size = UDim2.new(1, 0, 1, 0)
-energyFill.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
-energyFill.BorderSizePixel = 0
-energyFill.Parent = energyBar
-
-local energyFillCorner = Instance.new("UICorner")
-energyFillCorner.CornerRadius = UDim.new(0, 10)
-energyFillCorner.Parent = energyFill
-
-local energyText = Instance.new("TextLabel")
-energyText.Name = "EnergyText"
-energyText.Size = UDim2.new(1, 0, 1, 0)
-energyText.BackgroundTransparency = 1
-energyText.Text = "能量: 100%"
-energyText.TextColor3 = Color3.fromRGB(255, 255, 255)
-energyText.Font = Enum.Font.GothamBold
-energyText.TextSize = 14
-energyText.Parent = energyBar
-
--- 状态指示器
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Name = "StatusLabel"
-statusLabel.Size = UDim2.new(0, 200, 0, 30)
-statusLabel.Position = UDim2.new(0.5, -100, 0.1, 0)
-statusLabel.AnchorPoint = Vector2.new(0.5, 0)
-statusLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-statusLabel.BackgroundTransparency = 0.5
-statusLabel.Text = "就绪"
-statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-statusLabel.Font = Enum.Font.GothamBold
-statusLabel.TextSize = 16
-statusLabel.Visible = false
-statusLabel.Parent = screenGui
-
--- 动画系统
-local function createAnimation(character, animationType)
-    local animations = {
-        attack = {
-            rightArm = {CFrame = CFrame.new(1.5, 0.5, -1) * CFrame.Angles(math.rad(-90), 0, 0)},
-            leftArm = {CFrame = CFrame.new(-1.5, 0.5, -1) * CFrame.Angles(math.rad(-90), 0, 0)},
-            duration = 0.3
-        },
-        fly = {
-            rightArm = {CFrame = CFrame.new(1.5, 1, 0) * CFrame.Angles(math.rad(-45), 0, 0)},
-            leftArm = {CFrame = CFrame.new(-1.5, 1, 0) * CFrame.Angles(math.rad(-45), 0, 0)},
-            rightLeg = {CFrame = CFrame.new(0.5, -1, 0.2) * CFrame.Angles(math.rad(-20), 0, 0)},
-            leftLeg = {CFrame = CFrame.new(-0.5, -1, 0.2) * CFrame.Angles(math.rad(-20), 0, 0)},
-            duration = 0.5
-        },
-        skill1 = {
-            rightArm = {CFrame = CFrame.new(2, 0.5, 0) * CFrame.Angles(math.rad(-120), 0, math.rad(30))},
-            duration = 0.4
-        },
-        skill2 = {
-            leftArm = {CFrame = CFrame.new(-2, 0.5, 0) * CFrame.Angles(math.rad(-120), 0, math.rad(-30))},
-            duration = 0.4
-        },
-        skill3 = {
-            rightArm = {CFrame = CFrame.new(1.5, 2, 0) * CFrame.Angles(math.rad(-180), 0, 0)},
-            leftArm = {CFrame = CFrame.new(-1.5, 2, 0) * CFrame.Angles(math.rad(-180), 0, 0)},
-            duration = 0.6
-        },
-        skill4 = {
-            rightArm = {CFrame = CFrame.new(1.5, 0.5, 0) * CFrame.Angles(math.rad(-90), math.rad(45), 0)},
-            leftArm = {CFrame = CFrame.new(-1.5, 0.5, 0) * CFrame.Angles(math.rad(-90), math.rad(-45), 0)},
-            torso = {CFrame = CFrame.new(0, 0, 0) * CFrame.Angles(0, 0, math.rad(10))},
-            duration = 0.8
-        }
-    }
-    
-    return animations[animationType]
+-- 添加阴影效果
+local function addShadow(obj)
+    local shadow = Instance.new("ImageLabel")
+    shadow.Name = "Shadow"
+    shadow.Size = UDim2.new(1, 10, 1, 10)
+    shadow.Position = UDim2.new(0, -5, 0, -5)
+    shadow.BackgroundTransparency = 1
+    shadow.Image = "rbxassetid://5554236805"
+    shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+    shadow.ImageTransparency = 0.8
+    shadow.ScaleType = Enum.ScaleType.Slice
+    shadow.SliceCenter = Rect.new(10, 10, 118, 118)
+    shadow.ZIndex = -1
+    shadow.Parent = obj
 end
 
--- 执行动画
-local function playAnimation(animationType)
-    if not character then return end
-    
-    local animation = createAnimation(character, animationType)
-    if not animation then return end
-    
-    local limbs = {}
-    
-    -- 获取肢体
-    for limbName, _ in pairs(animation) do
-        if limbName ~= "duration" then
-            local limb = character:FindFirstChild(limbName)
-            if limb then
-                table.insert(limbs, limb)
-            end
-        end
-    end
-    
-    -- 保存原始位置
-    local originalCFrames = {}
-    for _, limb in ipairs(limbs) do
-        originalCFrames[limb.Name] = limb.CFrame
-    end
-    
-    -- 应用动画
-    for limbName, data in pairs(animation) do
-        if limbName ~= "duration" then
-            local limb = character:FindFirstChild(limbName)
-            if limb then
-                local tweenInfo = TweenInfo.new(
-                    animation.duration or 0.3,
-                    Enum.EasingStyle.Quad,
-                    Enum.EasingDirection.Out
-                )
-                
-                local tween = TweenService:Create(limb, tweenInfo, {CFrame = data.CFrame})
-                tween:Play()
-                
-                -- 动画结束后恢复
-                spawn(function()
-                    wait(animation.duration or 0.3)
-                    if limb and limb.Parent then
-                        local restoreTween = TweenService:Create(
-                            limb, 
-                            tweenInfo, 
-                            {CFrame = originalCFrames[limb.Name] or CFrame.new()}
-                        )
-                        restoreTween:Play()
-                    end
-                end)
-            end
-        end
-    end
+addShadow(mainFrame)
+addShadow(buttonExample)
+addShadow(cardExample)
+
+-- 拖拽功能变量
+local dragging = false
+local dragInput
+local dragStart
+local startPos
+
+-- 缩放功能变量
+local resizing = false
+local resizeStart
+local startSize
+
+-- 动画效果
+local function pulseAnimation(obj)
+    local pulse = TweenService:Create(obj, TweenInfo.new(
+        1.5,
+        Enum.EasingStyle.Sine,
+        Enum.EasingDirection.InOut,
+        -1,
+        true
+    ), {
+        BackgroundTransparency = 0.1
+    })
+    pulse:Play()
 end
 
--- 显示状态消息
-local function showStatus(message, duration)
-    statusLabel.Text = message
-    statusLabel.Visible = true
+-- 按钮悬停动画
+local function setupButtonHover(button)
+    button.MouseEnter:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.1,
+            BackgroundColor3 = Color3.fromRGB(30, 80, 150)
+        }):Play()
+        
+        TweenService:Create(buttonGlow, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.5
+        }):Play()
+    end)
     
-    spawn(function()
-        wait(duration or 2)
-        statusLabel.Visible = false
+    button.MouseLeave:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.3,
+            BackgroundColor3 = Color3.fromRGB(20, 60, 120)
+        }):Play()
+        
+        TweenService:Create(buttonGlow, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.8
+        }):Play()
+    end)
+    
+    button.MouseButton1Down:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.1), {
+            Size = UDim2.new(1, -45, 0, 48)
+        }):Play()
+    end)
+    
+    button.MouseButton1Up:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.1), {
+            Size = UDim2.new(1, -40, 0, 50)
+        }):Play()
     end)
 end
 
--- 更新技能冷却
-local function updateSkillCooldown(skillName)
-    local skillData = skillButtons[skillName]
-    if not skillData then return end
-    
-    local cooldown = skillData.config.cooldown
-    local startTime = tick()
-    skillCooldowns[skillName] = startTime + cooldown
-    
-    -- 显示冷却
-    skillData.overlay.Visible = true
-    
-    for i = cooldown, 0, -0.1 do
-        if tick() > skillCooldowns[skillName] then break end
-        
-        local remaining = skillCooldowns[skillName] - tick()
-        skillData.cooldownText.Text = string.format("%.1f", remaining)
-        skillData.overlay.BackgroundTransparency = 0.3 + (remaining/cooldown * 0.4)
-        
-        wait(0.1)
-    end
-    
-    skillData.overlay.Visible = false
-    skillCooldowns[skillName] = nil
-end
-
--- 检查技能是否在冷却中
-local function isSkillOnCooldown(skillName)
-    return skillCooldowns[skillName] and tick() < skillCooldowns[skillName]
-end
-
--- 飞行系统
-local function toggleFlight()
-    if isAttacking then return end
-    
-    isFlying = not isFlying
-    
-    if isFlying then
-        showStatus("飞行模式: 开启", 2)
-        
-        -- 创建飞行推力
-        flightVelocity = Instance.new("BodyVelocity")
-        flightVelocity.MaxForce = Vector3.new(40000, 40000, 40000)
-        flightVelocity.Velocity = Vector3.new(0, 0, 0)
-        flightVelocity.P = 1000
-        flightVelocity.Parent = humanoidRootPart
-        
-        -- 播放飞行动画
-        playAnimation("fly")
-        
-        -- 飞行控制
-        local flightConnection
-        flightConnection = RunService.RenderStepped:Connect(function()
-            if not isFlying or not flightVelocity or not flightVelocity.Parent then
-                flightConnection:Disconnect()
-                return
-            end
-            
-            local camera = workspace.CurrentCamera
-            local direction = Vector3.new(0, 0, 0)
-            
-            -- 获取输入方向
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-                direction = direction + camera.CFrame.LookVector
-            end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-                direction = direction - camera.CFrame.LookVector
-            end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-                direction = direction - camera.CFrame.RightVector
-            end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-                direction = direction + camera.CFrame.RightVector
-            end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-                direction = direction + Vector3.new(0, 1, 0)
-            end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-                direction = direction - Vector3.new(0, 1, 0)
-            end
-            
-            -- 标准化方向并应用速度
-            if direction.Magnitude > 0 then
-                direction = direction.Unit * 50
-            end
-            
-            flightVelocity.Velocity = direction
-        end)
-    else
-        showStatus("飞行模式: 关闭", 2)
-        
-        -- 清理飞行效果
-        if flightVelocity then
-            flightVelocity:Destroy()
-            flightVelocity = nil
-        end
-        
-        -- 恢复重力
-        humanoid.PlatformStand = false
-    end
-    
-    -- 切换平台站立状态以禁用重力
-    humanoid.PlatformStand = isFlying
-end
-
--- 攻击系统
-local function performAttack()
-    if isAttacking then return end
-    isAttacking = true
-    
-    showStatus("攻击!", 1)
-    playAnimation("attack")
-    
-    -- 攻击检测
-    spawn(function()
-        wait(0.2) -- 等待动画到达攻击点
-        
-        -- 创建攻击效果
-        local origin = humanoidRootPart.Position + humanoidRootPart.CFrame.LookVector * 4
-        local ray = Ray.new(origin, humanoidRootPart.CFrame.LookVector * 10)
-        
-        local hit, position = workspace:FindPartOnRay(ray, character)
-        if hit and hit.Parent then
-            local otherHumanoid = hit.Parent:FindFirstChild("Humanoid")
-            if otherHumanoid and otherHumanoid ~= humanoid then
-                -- 这里可以添加视觉效果
-                showStatus("命中目标!", 1)
-            end
-        end
-        
-        wait(0.3) -- 攻击恢复时间
-        isAttacking = false
-    end)
-end
-
--- 技能系统
-local function useSkill(skillIndex)
-    local skill = skillsConfig[skillIndex]
-    if not skill then return end
-    
-    if isSkillOnCooldown(skill.name) then
-        showStatus(skill.name .. " 冷却中", 1)
-        return
-    end
-    
-    if isAttacking then return end
-    
-    isAttacking = true
-    showStatus("释放: " .. skill.name, 2)
-    
-    -- 播放相应技能动画
-    playAnimation("skill" .. skillIndex)
-    
-    -- 启动冷却
-    spawn(function()
-        updateSkillCooldown(skill.name)
-    end)
-    
-    -- 技能效果
-    spawn(function()
-        wait(0.5) -- 技能释放延迟
-        
-        -- 技能1: 虚空冲击
-        if skillIndex == 1 then
-            local origin = humanoidRootPart.Position + humanoidRootPart.CFrame.LookVector * 3
-            for i = 1, 5 do
-                local ray = Ray.new(origin, humanoidRootPart.CFrame.LookVector * (15 + i*3))
-                local hit, position = workspace:FindPartOnRay(ray, character)
-                
-                -- 这里可以添加冲击波特效
-                if hit and hit.Parent then
-                    local otherHumanoid = hit.Parent:FindFirstChild("Humanoid")
-                    if otherHumanoid and otherHumanoid ~= humanoid then
-                        showStatus("虚空冲击命中!", 1)
-                    end
-                end
-            end
-            
-        -- 技能2: 暗影突袭
-        elseif skillIndex == 2 then
-            local targetPos = humanoidRootPart.Position + humanoidRootPart.CFrame.LookVector * 20
-            local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-            local tween = TweenService:Create(humanoidRootPart, tweenInfo, {Position = targetPos})
-            tween:Play()
-            
-        -- 技能3: 引力场
-        elseif skillIndex == 3 then
-            -- 创建引力区域效果
-            showStatus("引力场激活!", 3)
-            
-        -- 技能4: 神之审判
-        elseif skillIndex == 4 then
-            -- 创建范围效果
-            showStatus("审判降临!", 3)
-        end
-        
-        wait(0.5)
-        isAttacking = false
-    end)
-end
-
--- 输入绑定
-ContextActionService:BindAction(
-    "FlightToggle",
-    function(actionName, inputState, inputObject)
-        if inputState == Enum.UserInputState.Begin then
-            toggleFlight()
-        end
-    end,
-    false,
-    Enum.KeyCode.F
-)
-
-ContextActionService:BindAction(
-    "Attack",
-    function(actionName, inputState, inputObject)
-        if inputState == Enum.UserInputState.Begin then
-            performAttack()
-        end
-    end,
-    false,
-    Enum.KeyCode.ButtonR2,  -- 手柄RT
-    Enum.UserInputType.MouseButton1  -- 鼠标左键
-)
-
--- 技能键绑定
-for i, skill in ipairs(skillsConfig) do
-    ContextActionService:BindAction(
-        "Skill" .. i,
-        function(actionName, inputState, inputObject)
-            if inputState == Enum.UserInputState.Begin then
-                useSkill(i)
-            end
-        end,
-        false,
-        Enum.KeyCode[skill.key]
+-- 窗口拖拽功能
+local function updateFrame(input)
+    local delta = input.Position - dragStart
+    mainFrame.Position = UDim2.new(
+        startPos.X.Scale, 
+        startPos.X.Offset + delta.X, 
+        startPos.Y.Scale, 
+        startPos.Y.Offset + delta.Y
     )
 end
 
--- 能量系统
-local currentEnergy = 100
-local maxEnergy = 100
-local lastEnergyUpdate = tick()
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
 
-local function updateEnergy(delta)
-    if isFlying then
-        currentEnergy = math.max(0, currentEnergy - delta * 5)
-    elseif not isAttacking then
-        currentEnergy = math.min(maxEnergy, currentEnergy + delta * 3)
+titleBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInput = input
     end
-    
-    -- 更新UI
-    local energyPercent = currentEnergy / maxEnergy
-    energyFill.Size = UDim2.new(energyPercent, 0, 1, 0)
-    energyText.Text = string.format("能量: %d%%", math.floor(energyPercent * 100))
-    
-    -- 低能量警告
-    if currentEnergy < 20 then
-        energyFill.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-    else
-        energyFill.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        updateFrame(input)
     end
+end)
+
+-- 窗口缩放功能
+local function updateSize(input)
+    local delta = input.Position - resizeStart
+    local newSize = UDim2.new(
+        startSize.X.Scale, 
+        startSize.X.Offset + delta.X, 
+        startSize.Y.Scale, 
+        startSize.Y.Offset + delta.Y
+    )
     
-    -- 能量耗尽时退出飞行
-    if isFlying and currentEnergy <= 0 then
-        isFlying = false
-        toggleFlight()
-        showStatus("能量耗尽!", 2)
-    end
+    -- 限制最小尺寸
+    if newSize.X.Offset < 300 then newSize = UDim2.new(newSize.X.Scale, 300, newSize.Y.Scale, newSize.Y.Offset) end
+    if newSize.Y.Offset < 200 then newSize = UDim2.new(newSize.X.Scale, newSize.X.Offset, newSize.Y.Scale, 200) end
+    
+    -- 限制最大尺寸
+    if newSize.X.Offset > 800 then newSize = UDim2.new(newSize.X.Scale, 800, newSize.Y.Scale, newSize.Y.Offset) end
+    if newSize.Y.Offset > 800 then newSize = UDim2.new(newSize.X.Scale, newSize.X.Offset, newSize.Y.Scale, 800) end
+    
+    mainFrame.Size = newSize
 end
 
--- 主循环
-RunService.RenderStepped:Connect(function(deltaTime)
-    local now = tick()
-    local delta = now - lastEnergyUpdate
-    lastEnergyUpdate = now
-    
-    updateEnergy(delta)
-    
-    -- 更新技能按钮状态
-    for skillName, buttonData in pairs(skillButtons) do
-        if isSkillOnCooldown(skillName) then
-            buttonData.frame.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-        else
-            buttonData.frame.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-        end
+-- 创建缩放手柄
+local resizeHandle = Instance.new("Frame")
+resizeHandle.Name = "ResizeHandle"
+resizeHandle.Size = UDim2.new(0, 20, 0, 20)
+resizeHandle.Position = UDim2.new(1, -20, 1, -20)
+resizeHandle.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
+resizeHandle.BackgroundTransparency = 0.7
+resizeHandle.BorderSizePixel = 0
+resizeHandle.ZIndex = 10
+addCornerRadius(resizeHandle, 10)
+resizeHandle.Parent = mainFrame
+
+resizeHandle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        resizing = true
+        resizeStart = input.Position
+        startSize = mainFrame.Size
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                resizing = false
+            end
+        end)
     end
 end)
 
--- 角色重生处理
-player.CharacterAdded:Connect(function(newCharacter)
-    character = newCharacter
-    humanoid = character:WaitForChild("Humanoid")
-    humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-    
-    -- 重置状态
-    isFlying = false
-    isAttacking = false
-    if flightVelocity then
-        flightVelocity:Destroy()
-        flightVelocity = nil
+resizeHandle.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInput = input
     end
 end)
 
-showStatus("坠落之神 - 就绪", 3)
-print("坠落之神脚本已加载!")
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and resizing then
+        updateSize(input)
+    end
+end)
+
+-- 按钮点击事件
+buttonExample.MouseButton1Click:Connect(function()
+    local pulse = TweenService:Create(buttonGlow, TweenInfo.new(0.5), {
+        BackgroundTransparency = 0.2,
+        Size = UDim2.new(1, 20, 1, 20),
+        Position = UDim2.new(0, -10, 0, -10)
+    })
+    
+    pulse:Play()
+    
+    pulse.Completed:Connect(function()
+        TweenService:Create(buttonGlow, TweenInfo.new(0.3), {
+            BackgroundTransparency = 0.8,
+            Size = UDim2.new(1, 0, 1, 0),
+            Position = UDim2.new(0, 0, 0, 0)
+        }):Play()
+    end)
+end)
+
+-- 关闭按钮功能
+closeBtn.MouseButton1Click:Connect(function()
+    TweenService:Create(mainFrame, TweenInfo.new(0.3), {
+        Size = UDim2.new(0, 0, 0, 0),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        BackgroundTransparency = 1
+    }):Play()
+    
+    TweenService:Create(glow, TweenInfo.new(0.3), {
+        ImageTransparency = 1
+    }):Play()
+    
+    wait(0.3)
+    mainFrame.Visible = false
+end)
+
+-- 最小化按钮功能
+local minimized = false
+local originalSize = mainFrame.Size
+local originalPosition = mainFrame.Position
+
+minimizeBtn.MouseButton1Click:Connect(function()
+    if not minimized then
+        minimized = true
+        TweenService:Create(mainFrame, TweenInfo.new(0.3), {
+            Size = UDim2.new(0, 200, 0, 40),
+            Position = UDim2.new(1, -220, 0, 10)
+        }):Play()
+        
+        TweenService:Create(contentFrame, TweenInfo.new(0.2), {
+            BackgroundTransparency = 1
+        }):Play()
+        
+        contentFrame.Visible = false
+    else
+        minimized = false
+        contentFrame.Visible = true
+        
+        TweenService:Create(mainFrame, TweenInfo.new(0.3), {
+            Size = originalSize,
+            Position = originalPosition
+        }):Play()
+        
+        TweenService:Create(contentFrame, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0
+        }):Play()
+    end
+end)
+
+-- 滑动条功能
+local sliding = false
+sliderHandle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        sliding = true
+        local connection
+        connection = RunService.RenderStepped:Connect(function()
+            if sliding then
+                local mousePos = UserInputService:GetMouseLocation()
+                local sliderPos = sliderBackground.AbsolutePosition
+                local sliderSize = sliderBackground.AbsoluteSize
+                
+                local relativeX = math.clamp((mousePos.X - sliderPos.X) / sliderSize.X, 0, 1)
+                
+                sliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
+                sliderHandle.Position = UDim2.new(relativeX, -10, 0.5, -10)
+            else
+                connection:Disconnect()
+            end
+        end)
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                sliding = false
+            end
+        end)
+    end
+end)
+
+-- 开关功能
+local toggled = false
+toggleBackground.MouseButton1Click:Connect(function()
+    toggled = not toggled
+    if toggled then
+        TweenService:Create(toggleSwitch, TweenInfo.new(0.2), {
+            Position = UDim2.new(1, -25, 0, 2),
+            BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+        }):Play()
+        
+        TweenService:Create(toggleBackground, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(20, 80, 40)
+        }):Play()
+    else
+        TweenService:Create(toggleSwitch, TweenInfo.new(0.2), {
+            Position = UDim2.new(0, 2, 0, 2),
+            BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+        }):Play()
+        
+        TweenService:Create(toggleBackground, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(40, 50, 80)
+        }):Play()
+    end
+end)
+
+-- 设置按钮悬停效果
+setupButtonHover(buttonExample)
+
+-- 初始化动画
+mainFrame.Visible = false
+wait(0.1)
+
+-- 入场动画
+mainFrame.Visible = true
+mainFrame.Size = UDim2.new(0, 0, 0, 0)
+mainFrame.BackgroundTransparency = 1
+glow.ImageTransparency = 1
+
+TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+    Size = UDim2.new(0, 500, 0, 600),
+    BackgroundTransparency = 0.1
+}):Play()
+
+TweenService:Create(glow, TweenInfo.new(0.5), {
+    ImageTransparency = 0.7
+}):Play()
+
+-- 添加浮动动画
+local floatingAnimation = TweenService:Create(mainFrame, TweenInfo.new(
+    3,
+    Enum.EasingStyle.Sine,
+    Enum.EasingDirection.InOut,
+    -1,
+    true
+), {
+    Position = UDim2.new(0.5, -250, 0.5, -310)
+})
+floatingAnimation:Play()
+
+-- 将主框架添加到屏幕
+mainFrame.Parent = gui
+
+print("高级UI模板加载完成！")
