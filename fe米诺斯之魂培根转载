@@ -1,615 +1,495 @@
--- 高级UI模板 - 主脚本
--- 将此脚本放入StarterGui中
+-- Minecraft生存模式 - 本地客户端脚本
+-- 仅在你的客户端上可见，不影响其他玩家
+-- 放在StarterPlayerScripts或LocalScript中
 
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
-local gui = script.Parent
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local camera = workspace.CurrentCamera
 
--- 创建主UI框架
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "高级UITemplate"
-mainFrame.Size = UDim2.new(0, 500, 0, 600)
-mainFrame.Position = UDim2.new(0.5, -250, 0.5, -300)
-mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-mainFrame.BackgroundColor3 = Color3.fromRGB(10, 15, 30)
-mainFrame.BackgroundTransparency = 0.1
-mainFrame.BorderSizePixel = 0
+-- 方块类型定义（本地视觉效果）
+local BlockTypes = {
+    Grass = {
+        Color = Color3.fromRGB(92, 168, 80),
+        Material = Enum.Material.Grass
+    },
+    Dirt = {
+        Color = Color3.fromRGB(135, 102, 67),
+        Material = Enum.Material.Mud
+    },
+    Stone = {
+        Color = Color3.fromRGB(128, 128, 128),
+        Material = Enum.Material.Slate
+    },
+    Wood = {
+        Color = Color3.fromRGB(160, 120, 80),
+        Material = Enum.Material.Wood
+    },
+    Leaves = {
+        Color = Color3.fromRGB(60, 140, 80),
+        Material = Enum.Material.LeafyGrass
+    }
+}
 
--- 添加霓虹发光效果
-local glow = Instance.new("ImageLabel")
-glow.Name = "GlowEffect"
-glow.Size = UDim2.new(1, 40, 1, 40)
-glow.Position = UDim2.new(0, -20, 0, -20)
-glow.BackgroundTransparency = 1
-glow.Image = "rbxassetid://5553946656"
-glow.ImageColor3 = Color3.fromRGB(0, 100, 255)
-glow.ImageTransparency = 0.7
-glow.ScaleType = Enum.ScaleType.Slice
-glow.SliceCenter = Rect.new(100, 100, 100, 100)
-glow.ZIndex = 0
-glow.Parent = mainFrame
+-- 游戏状态
+local GameState = {
+    Inventory = {},
+    SelectedBlock = "Grass",
+    BlockSize = 3,
+    WorldData = {},
+    DayNightCycle = true,
+    TimeOfDay = 12, -- 12点 = 正午
+    SurvivalMode = true,
+    Health = 100,
+    Hunger = 100,
+    Oxygen = 100
+}
 
--- 创建标题栏
-local titleBar = Instance.new("Frame")
-titleBar.Name = "TitleBar"
-titleBar.Size = UDim2.new(1, 0, 0, 40)
-titleBar.BackgroundColor3 = Color3.fromRGB(15, 20, 40)
-titleBar.BorderSizePixel = 0
-titleBar.Parent = mainFrame
+-- 工具管理
+local Tools = {
+    Pickaxe = {
+        Name = "镐",
+        Range = 15,
+        Damage = 10,
+        MiningSpeed = 1.5
+    },
+    Axe = {
+        Name = "斧",
+        Range = 12,
+        Damage = 8,
+        MiningSpeed = 2
+    },
+    Shovel = {
+        Name = "锹",
+        Range = 10,
+        Damage = 5,
+        MiningSpeed = 1.8
+    }
+}
 
--- 添加标题栏渐变效果
-local titleGradient = Instance.new("UIGradient")
-titleGradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 80, 200)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 40, 100))
-})
-titleGradient.Rotation = 90
-titleGradient.Parent = titleBar
-
--- 标题文本
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Name = "Title"
-titleLabel.Size = UDim2.new(0, 200, 1, 0)
-titleLabel.Position = UDim2.new(0, 10, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "高级UI模板"
-titleLabel.TextColor3 = Color3.fromRGB(200, 230, 255)
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextSize = 22
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = titleBar
-
--- 控制按钮容器
-local controlButtons = Instance.new("Frame")
-controlButtons.Name = "ControlButtons"
-controlButtons.Size = UDim2.new(0, 100, 1, 0)
-controlButtons.Position = UDim2.new(1, -110, 0, 0)
-controlButtons.BackgroundTransparency = 1
-controlButtons.Parent = titleBar
-
--- 最小化按钮
-local minimizeBtn = Instance.new("ImageButton")
-minimizeBtn.Name = "Minimize"
-minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
-minimizeBtn.Position = UDim2.new(0, 0, 0.5, -15)
-minimizeBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 70)
-minimizeBtn.BackgroundTransparency = 0.5
-minimizeBtn.Image = "rbxassetid://3926305904"
-minimizeBtn.ImageColor3 = Color3.fromRGB(150, 200, 255)
-minimizeBtn.ImageRectOffset = Vector2.new(964, 324)
-minimizeBtn.ImageRectSize = Vector2.new(36, 36)
-minimizeBtn.Parent = controlButtons
-
--- 关闭按钮
-local closeBtn = Instance.new("ImageButton")
-closeBtn.Name = "Close"
-closeBtn.Size = UDim2.new(0, 30, 0, 30)
-closeBtn.Position = UDim2.new(0, 40, 0.5, -15)
-closeBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 70)
-closeBtn.BackgroundTransparency = 0.5
-closeBtn.Image = "rbxassetid://3926305904"
-closeBtn.ImageColor3 = Color3.fromRGB(255, 100, 100)
-closeBtn.ImageRectOffset = Vector2.new(284, 4)
-closeBtn.ImageRectSize = Vector2.new(24, 24)
-closeBtn.Parent = controlButtons
-
--- 内容区域
-local contentFrame = Instance.new("ScrollingFrame")
-contentFrame.Name = "Content"
-contentFrame.Size = UDim2.new(1, -20, 1, -60)
-contentFrame.Position = UDim2.new(0, 10, 0, 50)
-contentFrame.BackgroundTransparency = 1
-contentFrame.ScrollBarThickness = 4
-contentFrame.ScrollBarImageColor3 = Color3.fromRGB(0, 100, 200)
-contentFrame.CanvasSize = UDim2.new(0, 0, 0, 800)
-contentFrame.Parent = mainFrame
-
--- UI元素示例容器
-local uiExamples = Instance.new("Frame")
-uiExamples.Name = "UIExamples"
-uiExamples.Size = UDim2.new(1, 0, 0, 750)
-uiExamples.BackgroundTransparency = 1
-uiExamples.Parent = contentFrame
-
--- 添加示例UI元素
-local exampleTitle = Instance.new("TextLabel")
-exampleTitle.Name = "ExampleTitle"
-exampleTitle.Size = UDim2.new(1, 0, 0, 40)
-exampleTitle.BackgroundTransparency = 1
-exampleTitle.Text = "UI 元素示例"
-exampleTitle.TextColor3 = Color3.fromRGB(200, 230, 255)
-exampleTitle.Font = Enum.Font.GothamBold
-exampleTitle.TextSize = 24
-exampleTitle.TextXAlignment = Enum.TextXAlignment.Center
-exampleTitle.Parent = uiExamples
-
--- 按钮示例
-local buttonExample = Instance.new("TextButton")
-buttonExample.Name = "ExampleButton"
-buttonExample.Size = UDim2.new(1, -40, 0, 50)
-buttonExample.Position = UDim2.new(0, 20, 0, 60)
-buttonExample.BackgroundColor3 = Color3.fromRGB(20, 60, 120)
-buttonExample.BackgroundTransparency = 0.3
-buttonExample.Text = "动画按钮示例"
-buttonExample.TextColor3 = Color3.fromRGB(220, 240, 255)
-buttonExample.Font = Enum.Font.Gotham
-buttonExample.TextSize = 18
-buttonExample.Parent = uiExamples
-
--- 添加按钮动画效果
-local buttonGlow = Instance.new("Frame")
-buttonGlow.Name = "ButtonGlow"
-buttonGlow.Size = UDim2.new(1, 0, 1, 0)
-buttonGlow.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
-buttonGlow.BackgroundTransparency = 0.8
-buttonGlow.BorderSizePixel = 0
-buttonGlow.ZIndex = -1
-buttonGlow.Parent = buttonExample
-
--- 滑动条示例
-local sliderExample = Instance.new("Frame")
-sliderExample.Name = "SliderExample"
-sliderExample.Size = UDim2.new(1, -40, 0, 60)
-sliderExample.Position = UDim2.new(0, 20, 0, 130)
-sliderExample.BackgroundTransparency = 1
-sliderExample.Parent = uiExamples
-
-local sliderLabel = Instance.new("TextLabel")
-sliderLabel.Size = UDim2.new(1, 0, 0, 20)
-sliderLabel.BackgroundTransparency = 1
-sliderLabel.Text = "音量控制"
-sliderLabel.TextColor3 = Color3.fromRGB(180, 220, 255)
-sliderLabel.Font = Enum.Font.Gotham
-sliderLabel.TextSize = 16
-sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
-sliderLabel.Parent = sliderExample
-
-local sliderBackground = Instance.new("Frame")
-sliderBackground.Name = "SliderBackground"
-sliderBackground.Size = UDim2.new(1, 0, 0, 10)
-sliderBackground.Position = UDim2.new(0, 0, 0, 30)
-sliderBackground.BackgroundColor3 = Color3.fromRGB(30, 40, 70)
-sliderBackground.BorderSizePixel = 0
-sliderBackground.Parent = sliderExample
-
-local sliderFill = Instance.new("Frame")
-sliderFill.Name = "SliderFill"
-sliderFill.Size = UDim2.new(0.7, 0, 1, 0)
-sliderFill.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-sliderFill.BorderSizePixel = 0
-sliderFill.Parent = sliderBackground
-
-local sliderHandle = Instance.new("Frame")
-sliderHandle.Name = "SliderHandle"
-sliderHandle.Size = UDim2.new(0, 20, 0, 20)
-sliderHandle.Position = UDim2.new(0.7, -10, 0.5, -10)
-sliderHandle.BackgroundColor3 = Color3.fromRGB(220, 240, 255)
-sliderHandle.BorderSizePixel = 0
-sliderHandle.Parent = sliderExample
-
--- 开关示例
-local toggleExample = Instance.new("Frame")
-toggleExample.Name = "ToggleExample"
-toggleExample.Size = UDim2.new(1, -40, 0, 40)
-toggleExample.Position = UDim2.new(0, 20, 0, 210)
-toggleExample.BackgroundTransparency = 1
-toggleExample.Parent = uiExamples
-
-local toggleLabel = Instance.new("TextLabel")
-toggleLabel.Size = UDim2.new(0.7, 0, 1, 0)
-toggleLabel.BackgroundTransparency = 1
-toggleLabel.Text = "高级特效"
-toggleLabel.TextColor3 = Color3.fromRGB(180, 220, 255)
-toggleLabel.Font = Enum.Font.Gotham
-toggleLabel.TextSize = 16
-toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
-toggleLabel.Parent = toggleExample
-
-local toggleBackground = Instance.new("Frame")
-toggleBackground.Name = "ToggleBackground"
-toggleBackground.Size = UDim2.new(0, 50, 0, 25)
-toggleBackground.Position = UDim2.new(1, -50, 0.5, -12.5)
-toggleBackground.BackgroundColor3 = Color3.fromRGB(40, 50, 80)
-toggleBackground.BorderSizePixel = 0
-toggleBackground.Parent = toggleExample
-
-local toggleSwitch = Instance.new("Frame")
-toggleSwitch.Name = "ToggleSwitch"
-toggleSwitch.Size = UDim2.new(0, 23, 1, -4)
-toggleSwitch.Position = UDim2.new(0, 2, 0, 2)
-toggleSwitch.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
-toggleSwitch.BorderSizePixel = 0
-toggleSwitch.Parent = toggleBackground
-
--- 卡片示例
-local cardExample = Instance.new("Frame")
-cardExample.Name = "CardExample"
-cardExample.Size = UDim2.new(1, -40, 0, 120)
-cardExample.Position = UDim2.new(0, 20, 0, 270)
-cardExample.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
-cardExample.BackgroundTransparency = 0.2
-cardExample.Parent = uiExamples
-
-local cardTitle = Instance.new("TextLabel")
-cardTitle.Size = UDim2.new(1, -20, 0, 30)
-cardTitle.Position = UDim2.new(0, 10, 0, 10)
-cardTitle.BackgroundTransparency = 1
-cardTitle.Text = "高级功能卡片"
-cardTitle.TextColor3 = Color3.fromRGB(220, 240, 255)
-cardTitle.Font = Enum.Font.GothamBold
-cardTitle.TextSize = 18
-cardTitle.TextXAlignment = Enum.TextXAlignment.Left
-cardTitle.Parent = cardExample
-
-local cardDesc = Instance.new("TextLabel")
-cardDesc.Size = UDim2.new(1, -20, 0, 60)
-cardDesc.Position = UDim2.new(0, 10, 0, 45)
-cardDesc.BackgroundTransparency = 1
-cardDesc.Text = "这是一个高级UI卡片示例，展示了现代设计风格与动画效果的结合。"
-cardDesc.TextColor3 = Color3.fromRGB(180, 210, 240)
-cardDesc.Font = Enum.Font.Gotham
-cardDesc.TextSize = 14
-cardDesc.TextWrapped = true
-cardDesc.TextXAlignment = Enum.TextXAlignment.Left
-cardDesc.Parent = cardExample
-
--- 添加圆角效果
-local function addCornerRadius(obj, radius)
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, radius)
-    corner.Parent = obj
-end
-
-addCornerRadius(mainFrame, 12)
-addCornerRadius(titleBar, 12)
-addCornerRadius(buttonExample, 8)
-addCornerRadius(sliderBackground, 5)
-addCornerRadius(sliderHandle, 10)
-addCornerRadius(toggleBackground, 12)
-addCornerRadius(toggleSwitch, 10)
-addCornerRadius(cardExample, 10)
-addCornerRadius(minimizeBtn, 15)
-addCornerRadius(closeBtn, 15)
-
--- 添加阴影效果
-local function addShadow(obj)
-    local shadow = Instance.new("ImageLabel")
-    shadow.Name = "Shadow"
-    shadow.Size = UDim2.new(1, 10, 1, 10)
-    shadow.Position = UDim2.new(0, -5, 0, -5)
-    shadow.BackgroundTransparency = 1
-    shadow.Image = "rbxassetid://5554236805"
-    shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
-    shadow.ImageTransparency = 0.8
-    shadow.ScaleType = Enum.ScaleType.Slice
-    shadow.SliceCenter = Rect.new(10, 10, 118, 118)
-    shadow.ZIndex = -1
-    shadow.Parent = obj
-end
-
-addShadow(mainFrame)
-addShadow(buttonExample)
-addShadow(cardExample)
-
--- 拖拽功能变量
-local dragging = false
-local dragInput
-local dragStart
-local startPos
-
--- 缩放功能变量
-local resizing = false
-local resizeStart
-local startSize
-
--- 动画效果
-local function pulseAnimation(obj)
-    local pulse = TweenService:Create(obj, TweenInfo.new(
-        1.5,
-        Enum.EasingStyle.Sine,
-        Enum.EasingDirection.InOut,
-        -1,
-        true
-    ), {
-        BackgroundTransparency = 0.1
-    })
-    pulse:Play()
-end
-
--- 按钮悬停动画
-local function setupButtonHover(button)
-    button.MouseEnter:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundTransparency = 0.1,
-            BackgroundColor3 = Color3.fromRGB(30, 80, 150)
-        }):Play()
-        
-        TweenService:Create(buttonGlow, TweenInfo.new(0.2), {
-            BackgroundTransparency = 0.5
-        }):Play()
-    end)
+-- UI创建
+local function createUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "MinecraftUI"
+    screenGui.Parent = player.PlayerGui
+    screenGui.ResetOnSpawn = false
     
-    button.MouseLeave:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.2), {
-            BackgroundTransparency = 0.3,
-            BackgroundColor3 = Color3.fromRGB(20, 60, 120)
-        }):Play()
-        
-        TweenService:Create(buttonGlow, TweenInfo.new(0.2), {
-            BackgroundTransparency = 0.8
-        }):Play()
-    end)
+    -- 血量显示
+    local healthFrame = Instance.new("Frame")
+    healthFrame.Name = "HealthFrame"
+    healthFrame.Size = UDim2.new(0.2, 0, 0.05, 0)
+    healthFrame.Position = UDim2.new(0.02, 0, 0.92, 0)
+    healthFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    healthFrame.BackgroundTransparency = 0.5
+    healthFrame.Parent = screenGui
     
-    button.MouseButton1Down:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.1), {
-            Size = UDim2.new(1, -45, 0, 48)
-        }):Play()
-    end)
+    local healthText = Instance.new("TextLabel")
+    healthText.Name = "HealthText"
+    healthText.Size = UDim2.new(1, 0, 1, 0)
+    healthText.BackgroundTransparency = 1
+    healthText.Text = "❤️ 生命: 100"
+    healthText.TextColor3 = Color3.fromRGB(255, 100, 100)
+    healthText.Font = Enum.Font.SourceSansBold
+    healthText.Parent = healthFrame
     
-    button.MouseButton1Up:Connect(function()
-        TweenService:Create(button, TweenInfo.new(0.1), {
-            Size = UDim2.new(1, -40, 0, 50)
-        }):Play()
-    end)
+    -- 物品栏
+    local inventoryFrame = Instance.new("Frame")
+    inventoryFrame.Name = "InventoryFrame"
+    inventoryFrame.Size = UDim2.new(0.3, 0, 0.08, 0)
+    inventoryFrame.Position = UDim2.new(0.35, 0, 0.92, 0)
+    inventoryFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    inventoryFrame.BackgroundTransparency = 0.5
+    inventoryFrame.Parent = screenGui
+    
+    local inventoryText = Instance.new("TextLabel")
+    inventoryText.Name = "InventoryText"
+    inventoryText.Size = UDim2.new(1, 0, 1, 0)
+    inventoryText.BackgroundTransparency = 1
+    inventoryText.Text = "物品栏: 空"
+    inventoryText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    inventoryText.Font = Enum.Font.SourceSansBold
+    inventoryText.Parent = inventoryFrame
+    
+    -- 选择方块显示
+    local selectedFrame = Instance.new("Frame")
+    selectedFrame.Name = "SelectedBlockFrame"
+    selectedFrame.Size = UDim2.new(0.12, 0, 0.12, 0)
+    selectedFrame.Position = UDim2.new(0.88, 0, 0.44, 0)
+    selectedFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    selectedFrame.BorderSizePixel = 3
+    selectedFrame.BorderColor3 = Color3.fromRGB(255, 255, 255)
+    selectedFrame.Parent = screenGui
+    
+    local selectedText = Instance.new("TextLabel")
+    selectedText.Name = "SelectedText"
+    selectedText.Size = UDim2.new(1, 0, 0.3, 0)
+    selectedText.Position = UDim2.new(0, 0, 0.7, 0)
+    selectedText.BackgroundTransparency = 1
+    selectedText.Text = "草方块"
+    selectedText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    selectedText.Font = Enum.Font.SourceSansBold
+    selectedText.Parent = selectedFrame
+    
+    -- 方块预览
+    local blockPreview = Instance.new("Part")
+    blockPreview.Name = "BlockPreview"
+    blockPreview.Size = Vector3.new(2.8, 2.8, 2.8)
+    blockPreview.Transparency = 0.6
+    blockPreview.Anchored = true
+    blockPreview.CanCollide = false
+    blockPreview.Color = BlockTypes.Grass.Color
+    blockPreview.Material = BlockTypes.Grass.Material
+    blockPreview.Parent = workspace.Terrain
+    blockPreview.Position = Vector3.new(0, 100, 0) -- 初始位置
+    
+    -- 提示文本
+    local hintText = Instance.new("TextLabel")
+    hintText.Name = "HintText"
+    hintText.Size = UDim2.new(0.4, 0, 0.1, 0)
+    hintText.Position = UDim2.new(0.3, 0, 0.02, 0)
+    hintText.BackgroundTransparency = 1
+    hintText.Text = "Minecraft生存模式 (本地) - [Q]切换方块 [E]采集 [R]放置 [T]丢弃"
+    hintText.TextColor3 = Color3.fromRGB(255, 255, 0)
+    hintText.Font = Enum.Font.SourceSansBold
+    hintText.TextSize = 18
+    hintText.Parent = screenGui
+    
+    return {
+        ScreenGui = screenGui,
+        HealthText = healthText,
+        InventoryText = inventoryText,
+        SelectedText = selectedText,
+        BlockPreview = blockPreview,
+        HintText = hintText
+    }
 end
 
--- 窗口拖拽功能
-local function updateFrame(input)
-    local delta = input.Position - dragStart
-    mainFrame.Position = UDim2.new(
-        startPos.X.Scale, 
-        startPos.X.Offset + delta.X, 
-        startPos.Y.Scale, 
-        startPos.Y.Offset + delta.Y
-    )
+-- 方块生成系统（仅本地视觉效果）
+local function createBlock(position, blockType)
+    local chunkX = math.floor(position.X / 50)
+    local chunkZ = math.floor(position.Z / 50)
+    local chunkKey = chunkX .. "_" .. chunkZ
+    
+    if not GameState.WorldData[chunkKey] then
+        GameState.WorldData[chunkKey] = {}
+    end
+    
+    local blockKey = math.floor(position.X) .. "_" .. math.floor(position.Y) .. "_" .. math.floor(position.Z)
+    
+    if not GameState.WorldData[chunkKey][blockKey] then
+        local block = Instance.new("Part")
+        block.Name = "MCBlock_" .. blockType
+        block.Size = Vector3.new(GameState.BlockSize, GameState.BlockSize, GameState.BlockSize)
+        block.Position = Vector3.new(
+            math.floor(position.X / GameState.BlockSize) * GameState.BlockSize + GameState.BlockSize/2,
+            math.floor(position.Y / GameState.BlockSize) * GameState.BlockSize + GameState.BlockSize/2,
+            math.floor(position.Z / GameState.BlockSize) * GameState.BlockSize + GameState.BlockSize/2
+        )
+        block.Anchored = true
+        block.CanCollide = true
+        block.Color = BlockTypes[blockType].Color
+        block.Material = BlockTypes[blockType].Material
+        block.Parent = workspace.Terrain
+        
+        -- 添加标签用于识别
+        local tag = Instance.new("StringValue")
+        tag.Name = "BlockType"
+        tag.Value = blockType
+        tag.Parent = block
+        
+        GameState.WorldData[chunkKey][blockKey] = {
+            Block = block,
+            Type = blockType,
+            Position = position
+        }
+        
+        return block
+    end
+    
+    return nil
 end
 
-titleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = mainFrame.Position
+-- 删除方块
+local function removeBlock(position)
+    local chunkX = math.floor(position.X / 50)
+    local chunkZ = math.floor(position.Z / 50)
+    local chunkKey = chunkX .. "_" .. chunkZ
+    
+    if GameState.WorldData[chunkKey] then
+        local blockKey = math.floor(position.X) .. "_" .. math.floor(position.Y) .. "_" .. math.floor(position.Z)
         
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
+        if GameState.WorldData[chunkKey][blockKey] then
+            local blockData = GameState.WorldData[chunkKey][blockKey]
+            if blockData.Block then
+                blockData.Block:Destroy()
             end
-        end)
+            GameState.WorldData[chunkKey][blockKey] = nil
+            
+            -- 添加到物品栏
+            table.insert(GameState.Inventory, blockData.Type)
+            return blockData.Type
+        end
     end
-end)
-
-titleBar.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        dragInput = input
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        updateFrame(input)
-    end
-end)
-
--- 窗口缩放功能
-local function updateSize(input)
-    local delta = input.Position - resizeStart
-    local newSize = UDim2.new(
-        startSize.X.Scale, 
-        startSize.X.Offset + delta.X, 
-        startSize.Y.Scale, 
-        startSize.Y.Offset + delta.Y
-    )
     
-    -- 限制最小尺寸
-    if newSize.X.Offset < 300 then newSize = UDim2.new(newSize.X.Scale, 300, newSize.Y.Scale, newSize.Y.Offset) end
-    if newSize.Y.Offset < 200 then newSize = UDim2.new(newSize.X.Scale, newSize.X.Offset, newSize.Y.Scale, 200) end
-    
-    -- 限制最大尺寸
-    if newSize.X.Offset > 800 then newSize = UDim2.new(newSize.X.Scale, 800, newSize.Y.Scale, newSize.Y.Offset) end
-    if newSize.Y.Offset > 800 then newSize = UDim2.new(newSize.X.Scale, newSize.X.Offset, newSize.Y.Scale, 800) end
-    
-    mainFrame.Size = newSize
+    return nil
 end
 
--- 创建缩放手柄
-local resizeHandle = Instance.new("Frame")
-resizeHandle.Name = "ResizeHandle"
-resizeHandle.Size = UDim2.new(0, 20, 0, 20)
-resizeHandle.Position = UDim2.new(1, -20, 1, -20)
-resizeHandle.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
-resizeHandle.BackgroundTransparency = 0.7
-resizeHandle.BorderSizePixel = 0
-resizeHandle.ZIndex = 10
-addCornerRadius(resizeHandle, 10)
-resizeHandle.Parent = mainFrame
+-- 射线检测
+local function raycastFromCamera(distance)
+    local mousePos = UserInputService:GetMouseLocation()
+    local unitRay = camera:ScreenPointToRay(mousePos.X, mousePos.Y)
+    
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {character}
+    
+    local result = workspace:Raycast(unitRay.Origin, unitRay.Direction * distance, raycastParams)
+    
+    if result then
+        return result.Position, result.Instance, result.Normal
+    end
+    
+    return nil, nil, nil
+end
 
-resizeHandle.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        resizing = true
-        resizeStart = input.Position
-        startSize = mainFrame.Size
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                resizing = false
+-- 更新UI
+local function updateUI(ui)
+    ui.HealthText.Text = string.format("❤️ 生命: %d 🍖 饥饿: %d", GameState.Health, GameState.Hunger)
+    ui.InventoryText.Text = string.format("物品栏: %d个物品", #GameState.Inventory)
+    ui.SelectedText.Text = GameState.SelectedBlock
+    
+    local selectedBlockType = BlockTypes[GameState.SelectedBlock]
+    if selectedBlockType then
+        ui.BlockPreview.Color = selectedBlockType.Color
+        ui.BlockPreview.Material = selectedBlockType.Material
+    end
+end
+
+-- 生成基础地形
+local function generateTerrain()
+    local startPos = character.HumanoidRootPart.Position
+    
+    for x = -50, 50, GameState.BlockSize do
+        for z = -50, 50, GameState.BlockSize do
+            local height = 5
+            if math.noise(x * 0.1, z * 0.1) > 0 then
+                height = 8
             end
-        end)
-    end
-end)
-
-resizeHandle.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        dragInput = input
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and resizing then
-        updateSize(input)
-    end
-end)
-
--- 按钮点击事件
-buttonExample.MouseButton1Click:Connect(function()
-    local pulse = TweenService:Create(buttonGlow, TweenInfo.new(0.5), {
-        BackgroundTransparency = 0.2,
-        Size = UDim2.new(1, 20, 1, 20),
-        Position = UDim2.new(0, -10, 0, -10)
-    })
-    
-    pulse:Play()
-    
-    pulse.Completed:Connect(function()
-        TweenService:Create(buttonGlow, TweenInfo.new(0.3), {
-            BackgroundTransparency = 0.8,
-            Size = UDim2.new(1, 0, 1, 0),
-            Position = UDim2.new(0, 0, 0, 0)
-        }):Play()
-    end)
-end)
-
--- 关闭按钮功能
-closeBtn.MouseButton1Click:Connect(function()
-    TweenService:Create(mainFrame, TweenInfo.new(0.3), {
-        Size = UDim2.new(0, 0, 0, 0),
-        Position = UDim2.new(0.5, 0, 0.5, 0),
-        BackgroundTransparency = 1
-    }):Play()
-    
-    TweenService:Create(glow, TweenInfo.new(0.3), {
-        ImageTransparency = 1
-    }):Play()
-    
-    wait(0.3)
-    mainFrame.Visible = false
-end)
-
--- 最小化按钮功能
-local minimized = false
-local originalSize = mainFrame.Size
-local originalPosition = mainFrame.Position
-
-minimizeBtn.MouseButton1Click:Connect(function()
-    if not minimized then
-        minimized = true
-        TweenService:Create(mainFrame, TweenInfo.new(0.3), {
-            Size = UDim2.new(0, 200, 0, 40),
-            Position = UDim2.new(1, -220, 0, 10)
-        }):Play()
-        
-        TweenService:Create(contentFrame, TweenInfo.new(0.2), {
-            BackgroundTransparency = 1
-        }):Play()
-        
-        contentFrame.Visible = false
-    else
-        minimized = false
-        contentFrame.Visible = true
-        
-        TweenService:Create(mainFrame, TweenInfo.new(0.3), {
-            Size = originalSize,
-            Position = originalPosition
-        }):Play()
-        
-        TweenService:Create(contentFrame, TweenInfo.new(0.2), {
-            BackgroundTransparency = 0
-        }):Play()
-    end
-end)
-
--- 滑动条功能
-local sliding = false
-sliderHandle.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        sliding = true
-        local connection
-        connection = RunService.RenderStepped:Connect(function()
-            if sliding then
-                local mousePos = UserInputService:GetMouseLocation()
-                local sliderPos = sliderBackground.AbsolutePosition
-                local sliderSize = sliderBackground.AbsoluteSize
+            
+            for y = 0, height do
+                local blockType = "Dirt"
+                if y == height then
+                    blockType = "Grass"
+                elseif y > height - 3 then
+                    blockType = "Dirt"
+                else
+                    blockType = "Stone"
+                end
                 
-                local relativeX = math.clamp((mousePos.X - sliderPos.X) / sliderSize.X, 0, 1)
+                createBlock(startPos + Vector3.new(x, y * GameState.BlockSize, z), blockType)
+            end
+            
+            -- 生成一些树
+            if math.random(1, 20) == 1 then
+                local treeHeight = math.random(4, 6)
+                for y = height + 1, height + treeHeight do
+                    createBlock(startPos + Vector3.new(x, y * GameState.BlockSize, z), "Wood")
+                end
                 
-                sliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
-                sliderHandle.Position = UDim2.new(relativeX, -10, 0.5, -10)
-            else
-                connection:Disconnect()
+                -- 树叶
+                for dx = -1, 1 do
+                    for dz = -1, 1 do
+                        for dy = -1, 1 do
+                            if not (dx == 0 and dz == 0) then
+                                createBlock(
+                                    startPos + Vector3.new(
+                                        x + dx * GameState.BlockSize,
+                                        (height + treeHeight - 1) * GameState.BlockSize,
+                                        z + dz * GameState.BlockSize
+                                    ),
+                                    "Leaves"
+                                )
+                            end
+                        end
+                    end
+                end
             end
-        end)
+        end
+    end
+end
+
+-- 昼夜循环
+local function dayNightCycle()
+    if GameState.DayNightCycle then
+        GameState.TimeOfDay = (GameState.TimeOfDay + 0.01) % 24
         
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                sliding = false
+        local brightness = 1
+        if GameState.TimeOfDay > 18 or GameState.TimeOfDay < 6 then
+            brightness = 0.2 -- 夜晚
+        elseif GameState.TimeOfDay > 17 or GameState.TimeOfDay < 7 then
+            brightness = 0.5 -- 黄昏/黎明
+        end
+        
+        game.Lighting.Brightness = brightness
+        game.Lighting.ClockTime = GameState.TimeOfDay
+        
+        if GameState.TimeOfDay > 5 and GameState.TimeOfDay < 19 then
+            game.Lighting.FogEnd = 10000
+            game.Lighting.FogColor = Color3.fromRGB(200, 220, 255)
+        else
+            game.Lighting.FogEnd = 1000
+            game.Lighting.FogColor = Color3.fromRGB(10, 10, 30)
+        end
+    end
+end
+
+-- 生存机制
+local function survivalMechanics(deltaTime)
+    if GameState.SurvivalMode then
+        -- 饥饿减少
+        GameState.Hunger = math.max(0, GameState.Hunger - deltaTime * 0.5)
+        
+        -- 如果饥饿过低，减少生命值
+        if GameState.Hunger < 20 then
+            GameState.Health = math.max(0, GameState.Health - deltaTime * 1)
+        end
+        
+        -- 自动恢复生命（如果饥饿充足）
+        if GameState.Hunger > 80 and GameState.Health < 100 then
+            GameState.Health = math.min(100, GameState.Health + deltaTime * 2)
+        end
+        
+        -- 水下检查
+        local headPos = character.Head.Position
+        local terrain = workspace.Terrain
+        local material, _ = terrain:ReadVoxels(
+            Region3.new(
+                headPos - Vector3.new(0.5, 0.5, 0.5),
+                headPos + Vector3.new(0.5, 0.5, 0.5)
+            ),
+            4
+        )
+        
+        -- 简单的水检查
+        if headPos.Y < 0 then -- 假设水面在Y=0
+            GameState.Oxygen = math.max(0, GameState.Oxygen - deltaTime * 10)
+            if GameState.Oxygen <= 0 then
+                GameState.Health = math.max(0, GameState.Health - deltaTime * 5)
             end
-        end)
+        else
+            GameState.Oxygen = math.min(100, GameState.Oxygen + deltaTime * 20)
+        end
     end
-end)
+end
 
--- 开关功能
-local toggled = false
-toggleBackground.MouseButton1Click:Connect(function()
-    toggled = not toggled
-    if toggled then
-        TweenService:Create(toggleSwitch, TweenInfo.new(0.2), {
-            Position = UDim2.new(1, -25, 0, 2),
-            BackgroundColor3 = Color3.fromRGB(0, 200, 100)
-        }):Play()
+-- 主函数
+local function main()
+    -- 创建UI
+    local ui = createUI()
+    
+    -- 生成初始地形
+    generateTerrain()
+    
+    -- 输入处理
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
         
-        TweenService:Create(toggleBackground, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(20, 80, 40)
-        }):Play()
-    else
-        TweenService:Create(toggleSwitch, TweenInfo.new(0.2), {
-            Position = UDim2.new(0, 2, 0, 2),
-            BackgroundColor3 = Color3.fromRGB(0, 150, 255)
-        }):Play()
+        local hitPos, hitInstance, normal = raycastFromCamera(100)
         
-        TweenService:Create(toggleBackground, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(40, 50, 80)
-        }):Play()
-    end
-end)
+        if input.KeyCode == Enum.KeyCode.E then -- 采集
+            if hitPos then
+                local blockType = removeBlock(hitPos)
+                if blockType then
+                    ui.HintText.Text = "采集: " .. blockType
+                end
+            end
+            
+        elseif input.KeyCode == Enum.KeyCode.R then -- 放置
+            if hitPos and #GameState.Inventory > 0 then
+                local placePos = hitPos + (normal * GameState.BlockSize)
+                local blockType = table.remove(GameState.Inventory, 1)
+                createBlock(placePos, blockType)
+                ui.HintText.Text = "放置: " .. blockType
+            end
+            
+        elseif input.KeyCode == Enum.KeyCode.Q then -- 切换方块
+            local blockTypes = {"Grass", "Dirt", "Stone", "Wood", "Leaves"}
+            local currentIndex = 1
+            for i, blockType in ipairs(blockTypes) do
+                if blockType == GameState.SelectedBlock then
+                    currentIndex = i
+                    break
+                end
+            end
+            
+            local nextIndex = (currentIndex % #blockTypes) + 1
+            GameState.SelectedBlock = blockTypes[nextIndex]
+            ui.HintText.Text = "选择: " .. GameState.SelectedBlock
+            
+        elseif input.KeyCode == Enum.KeyCode.T then -- 丢弃
+            if #GameState.Inventory > 0 then
+                local dropped = table.remove(GameState.Inventory, 1)
+                ui.HintText.Text = "丢弃: " .. dropped
+            end
+        end
+    end)
+    
+    -- 游戏循环
+    local lastTime = tick()
+    RunService.RenderStepped:Connect(function()
+        local currentTime = tick()
+        local deltaTime = currentTime - lastTime
+        lastTime = currentTime
+        
+        -- 更新方块预览
+        local hitPos, _, normal = raycastFromCamera(50)
+        if hitPos then
+            ui.BlockPreview.Position = hitPos + (normal * GameState.BlockSize/2)
+            ui.BlockPreview.Transparency = 0.6
+        else
+            ui.BlockPreview.Transparency = 1
+        end
+        
+        -- 更新生存机制
+        survivalMechanics(deltaTime)
+        
+        -- 昼夜循环
+        dayNightCycle()
+        
+        -- 更新UI
+        updateUI(ui)
+    end)
+    
+    -- 角色死亡重置
+    character.Humanoid.Died:Connect(function()
+        task.wait(3)
+        GameState.Health = 100
+        GameState.Hunger = 100
+        GameState.Oxygen = 100
+        character:BreakJoints()
+    end)
+    
+    print("Minecraft生存模式已加载！")
+    print("控制说明:")
+    print("Q - 切换方块类型")
+    print("E - 采集方块")
+    print("R - 放置方块")
+    print("T - 丢弃物品")
+    print("WASD - 移动")
+    print("空格 - 跳跃")
+end
 
--- 设置按钮悬停效果
-setupButtonHover(buttonExample)
+-- 等待角色加载
+if not character then
+    player.CharacterAdded:Wait()
+    character = player.Character
+end
 
--- 初始化动画
-mainFrame.Visible = false
-wait(0.1)
-
--- 入场动画
-mainFrame.Visible = true
-mainFrame.Size = UDim2.new(0, 0, 0, 0)
-mainFrame.BackgroundTransparency = 1
-glow.ImageTransparency = 1
-
-TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-    Size = UDim2.new(0, 500, 0, 600),
-    BackgroundTransparency = 0.1
-}):Play()
-
-TweenService:Create(glow, TweenInfo.new(0.5), {
-    ImageTransparency = 0.7
-}):Play()
-
--- 添加浮动动画
-local floatingAnimation = TweenService:Create(mainFrame, TweenInfo.new(
-    3,
-    Enum.EasingStyle.Sine,
-    Enum.EasingDirection.InOut,
-    -1,
-    true
-), {
-    Position = UDim2.new(0.5, -250, 0.5, -310)
-})
-floatingAnimation:Play()
-
--- 将主框架添加到屏幕
-mainFrame.Parent = gui
-
-print("高级UI模板加载完成！")
+-- 启动游戏
+main()
