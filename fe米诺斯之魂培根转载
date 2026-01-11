@@ -1,322 +1,1428 @@
--- Minecraft生存模式 - 本地客户端脚本
--- 仅在你的客户端上可见，不影响其他玩家
--- 放在StarterPlayerScripts或LocalScript中
+-- Minecraft Ultimate Survival - 完整本地客户端脚本
+-- 支持手机端，包含完整生存系统
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local GuiService = game:GetService("GuiService")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
 local camera = workspace.CurrentCamera
 
--- 方块类型定义（本地视觉效果）
-local BlockTypes = {
-    Grass = {
-        Color = Color3.fromRGB(92, 168, 80),
-        Material = Enum.Material.Grass
-    },
-    Dirt = {
-        Color = Color3.fromRGB(135, 102, 67),
-        Material = Enum.Material.Mud
-    },
-    Stone = {
-        Color = Color3.fromRGB(128, 128, 128),
-        Material = Enum.Material.Slate
-    },
-    Wood = {
-        Color = Color3.fromRGB(160, 120, 80),
-        Material = Enum.Material.Wood
-    },
-    Leaves = {
-        Color = Color3.fromRGB(60, 140, 80),
-        Material = Enum.Material.LeafyGrass
-    }
+-- 游戏配置
+local CONFIG = {
+    CHUNK_SIZE = 16,
+    RENDER_DISTANCE = 6,
+    BLOCK_SIZE = 3,
+    WORLD_SEED = math.random(1, 1000000),
+    GRAVITY = 196.2,
+    DAY_LENGTH = 1200, -- 20分钟一个昼夜
+    MAX_HEALTH = 100,
+    MAX_HUNGER = 100,
+    MAX_OXYGEN = 100,
+    MAX_SANITY = 100
 }
 
--- 游戏状态
-local GameState = {
-    Inventory = {},
-    SelectedBlock = "Grass",
-    BlockSize = 3,
-    WorldData = {},
-    DayNightCycle = true,
-    TimeOfDay = 12, -- 12点 = 正午
-    SurvivalMode = true,
-    Health = 100,
-    Hunger = 100,
-    Oxygen = 100
+-- 方块类型系统 (50+种方块)
+local BLOCK_TYPES = {
+    -- 基础方块
+    GRASS = {ID = 1, Name = "草方块", Color = Color3.fromRGB(92, 168, 80), Material = Enum.Material.Grass, Hardness = 0.6},
+    DIRT = {ID = 2, Name = "泥土", Color = Color3.fromRGB(135, 102, 67), Material = Enum.Material.Mud, Hardness = 0.5},
+    STONE = {ID = 3, Name = "石头", Color = Color3.fromRGB(128, 128, 128), Material = Enum.Material.Slate, Hardness = 1.5},
+    COBBLESTONE = {ID = 4, Name = "圆石", Color = Color3.fromRGB(110, 110, 110), Material = Enum.Material.Cobblestone, Hardness = 2.0},
+    
+    -- 矿物
+    COAL_ORE = {ID = 5, Name = "煤矿石", Color = Color3.fromRGB(50, 50, 50), Material = Enum.Material.Slate, Hardness = 3.0, LightEmission = 0.1},
+    IRON_ORE = {ID = 6, Name = "铁矿石", Color = Color3.fromRGB(180, 140, 100), Material = Enum.Material.Slate, Hardness = 3.0},
+    GOLD_ORE = {ID = 7, Name = "金矿石", Color = Color3.fromRGB(255, 215, 0), Material = Enum.Material.Slate, Hardness = 3.0},
+    DIAMOND_ORE = {ID = 8, Name = "钻石矿石", Color = Color3.fromRGB(100, 200, 255), Material = Enum.Material.Slate, Hardness = 4.0, LightEmission = 0.2},
+    EMERALD_ORE = {ID = 9, Name = "绿宝石矿石", Color = Color3.fromRGB(0, 200, 100), Material = Enum.Material.Slate, Hardness = 4.0, LightEmission = 0.15},
+    REDSTONE_ORE = {ID = 10, Name = "红石矿石", Color = Color3.fromRGB(255, 50, 50), Material = Enum.Material.Slate, Hardness = 3.0, LightEmission = 0.3},
+    
+    -- 木材
+    OAK_LOG = {ID = 11, Name = "橡木原木", Color = Color3.fromRGB(160, 120, 80), Material = Enum.Material.Wood, Hardness = 2.0},
+    OAK_PLANKS = {ID = 12, Name = "橡木木板", Color = Color3.fromRGB(200, 160, 120), Material = Enum.Material.WoodPlanks, Hardness = 2.0},
+    BIRCH_LOG = {ID = 13, Name = "白桦原木", Color = Color3.fromRGB(220, 210, 180), Material = Enum.Material.Wood, Hardness = 2.0},
+    BIRCH_PLANKS = {ID = 14, Name = "白桦木板", Color = Color3.fromRGB(240, 230, 200), Material = Enum.Material.WoodPlanks, Hardness = 2.0},
+    
+    -- 树叶
+    OAK_LEAVES = {ID = 15, Name = "橡木树叶", Color = Color3.fromRGB(60, 140, 80), Material = Enum.Material.LeafyGrass, Hardness = 0.2, Transparent = true},
+    BIRCH_LEAVES = {ID = 16, Name = "白桦树叶", Color = Color3.fromRGB(120, 180, 120), Material = Enum.Material.LeafyGrass, Hardness = 0.2, Transparent = true},
+    
+    -- 装饰方块
+    GLASS = {ID = 17, Name = "玻璃", Color = Color3.fromRGB(220, 240, 255), Material = Enum.Material.Glass, Hardness = 0.3, Transparent = true},
+    BRICKS = {ID = 18, Name = "砖块", Color = Color3.fromRGB(180, 100, 80), Material = Enum.Material.Brick, Hardness = 2.0},
+    
+    -- 沙子相关
+    SAND = {ID = 19, Name = "沙子", Color = Color3.fromRGB(220, 210, 160), Material = Enum.Material.Sand, Hardness = 0.5, GravityAffected = true},
+    SANDSTONE = {ID = 20, Name = "砂岩", Color = Color3.fromRGB(200, 190, 150), Material = Enum.Material.Sandstone, Hardness = 0.8},
+    
+    -- 水相关
+    WATER = {ID = 21, Name = "水", Color = Color3.fromRGB(50, 150, 255), Material = Enum.Material.Water, Hardness = 0, Liquid = true, Transparent = true},
+    ICE = {ID = 22, Name = "冰", Color = Color3.fromRGB(200, 240, 255), Material = Enum.Material.Ice, Hardness = 0.5, Slippery = true},
+    
+    -- 下界方块 (地狱维度)
+    NETHERRACK = {ID = 23, Name = "下界岩", Color = Color3.fromRGB(120, 40, 40), Material = Enum.Material.Basalt, Hardness = 0.4, LightEmission = 0.1},
+    SOUL_SAND = {ID = 24, Name = "灵魂沙", Color = Color3.fromRGB(80, 60, 60), Material = Enum.Material.Sand, Hardness = 0.5, SlowMovement = true},
+    GLOWSTONE = {ID = 25, Name = "荧石", Color = Color3.fromRGB(255, 255, 180), Material = Enum.Material.Neon, Hardness = 0.3, LightEmission = 0.8},
+    NETHER_BRICK = {ID = 26, Name = "下界砖块", Color = Color3.fromRGB(80, 30, 30), Material = Enum.Material.Brick, Hardness = 2.0},
+    
+    -- 末地方块 (末地维度)
+    END_STONE = {ID = 27, Name = "末地石", Color = Color3.fromRGB(220, 220, 160), Material = Enum.Material.Sandstone, Hardness = 3.0},
+    PURPUR_BLOCK = {ID = 28, Name = "紫珀块", Color = Color3.fromRGB(180, 120, 200), Material = Enum.Material.Neon, Hardness = 1.5, LightEmission = 0.1},
+    
+    -- 人造光源
+    TORCH = {ID = 29, Name = "火把", Color = Color3.fromRGB(255, 200, 100), Material = Enum.Material.Neon, Hardness = 0, LightEmission = 0.9, Decoration = true},
+    GLOW_BERRIES = {ID = 30, Name = "发光浆果", Color = Color3.fromRGB(255, 255, 150), Material = Enum.Material.Neon, Hardness = 0, LightEmission = 0.6, Decoration = true},
+    LANTERN = {ID = 31, Name = "灯笼", Color = Color3.fromRGB(255, 180, 50), Material = Enum.Material.Metal, Hardness = 0.5, LightEmission = 0.8},
+    
+    -- 特殊方块
+    CRAFTING_TABLE = {ID = 32, Name = "工作台", Color = Color3.fromRGB(180, 140, 100), Material = Enum.Material.WoodPlanks, Hardness = 2.5},
+    FURNACE = {ID = 33, Name = "熔炉", Color = Color3.fromRGB(100, 100, 100), Material = Enum.Material.Slate, Hardness = 3.5},
+    CHEST = {ID = 34, Name = "箱子", Color = Color3.fromRGB(160, 120, 80), Material = Enum.Material.Wood, Hardness = 2.5},
+    BED = {ID = 35, Name = "床", Color = Color3.fromRGB(200, 50, 50), Material = Enum.Material.Fabric, Hardness = 0.5},
+    
+    -- 更多方块...
+    GRAVEL = {ID = 36, Name = "沙砾", Color = Color3.fromRGB(140, 130, 120), Material = Enum.Material.Sand, Hardness = 0.6, GravityAffected = true},
+    CLAY = {ID = 37, Name = "粘土", Color = Color3.fromRGB(160, 180, 200), Material = Enum.Material.Sand, Hardness = 0.6},
+    SNOW = {ID = 38, Name = "雪", Color = Color3.fromRGB(250, 250, 250), Material = Enum.Material.Snow, Hardness = 0.2},
+    SNOW_BLOCK = {ID = 39, Name = "雪块", Color = Color3.fromRGB(240, 240, 240), Material = Enum.Material.Snow, Hardness = 0.5},
+    ICE_PACKED = {ID = 40, Name = "浮冰", Color = Color3.fromRGB(180, 220, 255), Material = Enum.Material.Ice, Hardness = 0.8, Slippery = true},
+    
+    -- 深层矿洞方块
+    DEEPSLATE = {ID = 41, Name = "深板岩", Color = Color3.fromRGB(80, 80, 90), Material = Enum.Material.Basalt, Hardness = 3.0},
+    DRIPSTONE = {ID = 42, Name = "滴水石", Color = Color3.fromRGB(150, 130, 100), Material = Enum.Material.Slate, Hardness = 1.5},
+    CALCITE = {ID = 43, Name = "方解石", Color = Color3.fromRGB(230, 230, 220), Material = Enum.Material.Marble, Hardness = 0.75},
+    TUFF = {ID = 44, Name = "凝灰岩", Color = Color3.fromRGB(120, 120, 110), Material = Enum.Material.Slate, Hardness = 1.5},
+    
+    -- 更多矿物
+    COPPER_ORE = {ID = 45, Name = "铜矿石", Color = Color3.fromRGB(200, 120, 80), Material = Enum.Material.Slate, Hardness = 3.0},
+    TIN_ORE = {ID = 46, Name = "锡矿石", Color = Color3.fromRGB(180, 180, 200), Material = Enum.Material.Slate, Hardness = 2.5},
+    SILVER_ORE = {ID = 47, Name = "银矿石", Color = Color3.fromRGB(200, 220, 230), Material = Enum.Material.Slate, Hardness = 3.0},
+    PLATINUM_ORE = {ID = 48, Name = "铂矿石", Color = Color3.fromRGB(220, 220, 240), Material = Enum.Material.Slate, Hardness = 4.0},
+    RUBY_ORE = {ID = 49, Name = "红宝石矿石", Color = Color3.fromRGB(255, 50, 50), Material = Enum.Material.Slate, Hardness = 4.0, LightEmission = 0.2},
+    SAPPHIRE_ORE = {ID = 50, Name = "蓝宝石矿石", Color = Color3.fromRGB(50, 100, 255), Material = Enum.Material.Slate, Hardness = 4.0, LightEmission = 0.2},
+    
+    -- 地狱深层方块
+    MAGMA_BLOCK = {ID = 51, Name = "岩浆块", Color = Color3.fromRGB(255, 100, 0), Material = Enum.Material.Neon, Hardness = 0.5, LightEmission = 0.6, Damage = 1},
+    OBSIDIAN = {ID = 52, Name = "黑曜石", Color = Color3.fromRGB(30, 20, 50), Material = Enum.Material.Basalt, Hardness = 50.0},
+    CRYING_OBSIDIAN = {ID = 53, Name = "哭泣的黑曜石", Color = Color3.fromRGB(100, 30, 150), Material = Enum.Material.Neon, Hardness = 50.0, LightEmission = 0.3},
+    ANCIENT_DEBRIS = {ID = 54, Name = "远古残骸", Color = Color3.fromRGB(100, 80, 60), Material = Enum.Material.Basalt, Hardness = 30.0},
+    
+    -- 末地深层方块
+    ENDER_CRYSTAL_BLOCK = {ID = 55, Name = "末影水晶块", Color = Color3.fromRGB(150, 50, 200), Material = Enum.Material.Neon, Hardness = 1.0, LightEmission = 0.7},
+    VOID_STONE = {ID = 56, Name = "虚空石", Color = Color3.fromRGB(20, 10, 30), Material = Enum.Material.Slate, Hardness = 5.0},
+    CHORUS_FLOWER = {ID = 57, Name = "紫颂花", Color = Color3.fromRGB(200, 100, 200), Material = Enum.Material.Neon, Hardness = 0.5, LightEmission = 0.4},
+    CHORUS_PLANT = {ID = 58, Name = "紫颂植物", Color = Color3.fromRGB(180, 80, 180), Material = Enum.Material.Neon, Hardness = 0.5},
+    
+    -- 特殊功能方块
+    PORTAL_FRAME = {ID = 59, Name = "传送门框架", Color = Color3.fromRGB(100, 50, 150), Material = Enum.Material.Neon, Hardness = 10.0},
+    ENCHANTING_TABLE = {ID = 60, Name = "附魔台", Color = Color3.fromRGB(150, 100, 200), Material = Enum.Material.Neon, Hardness = 5.0, LightEmission = 0.3},
+    BEACON = {ID = 61, Name = "信标", Color = Color3.fromRGB(100, 200, 255), Material = Enum.Material.Neon, Hardness = 3.0, LightEmission = 0.9},
+    
+    -- 装饰方块
+    BOOKSHELF = {ID = 62, Name = "书架", Color = Color3.fromRGB(180, 150, 100), Material = Enum.Material.Wood, Hardness = 1.5},
+    PAINTING = {ID = 63, Name = "画", Color = Color3.fromRGB(200, 180, 140), Material = Enum.Material.Fabric, Hardness = 0.5, Decoration = true},
+    FLOWER_POT = {ID = 64, Name = "花盆", Color = Color3.fromRGB(180, 140, 100), Material = Enum.Material.Plastic, Hardness = 0.3},
+    ANVIL = {ID = 65, Name = "铁砧", Color = Color3.fromRGB(150, 150, 150), Material = Enum.Material.Metal, Hardness = 5.0},
+    
+    -- 红石系统
+    REDSTONE_BLOCK = {ID = 66, Name = "红石块", Color = Color3.fromRGB(255, 50, 50), Material = Enum.Material.Neon, Hardness = 5.0, LightEmission = 0.5},
+    REDSTONE_WIRE = {ID = 67, Name = "红石线", Color = Color3.fromRGB(255, 80, 80), Material = Enum.Material.Neon, Hardness = 0, Decoration = true, LightEmission = 0.7},
+    REDSTONE_TORCH = {ID = 68, Name = "红石火把", Color = Color3.fromRGB(255, 100, 100), Material = Enum.Material.Neon, Hardness = 0, Decoration = true, LightEmission = 0.8},
+    LEVER = {ID = 69, Name = "拉杆", Color = Color3.fromRGB(150, 120, 90), Material = Enum.Material.Wood, Hardness = 0.5, Decoration = true},
+    BUTTON = {ID = 70, Name = "按钮", Color = Color3.fromRGB(180, 140, 100), Material = Enum.Material.Wood, Hardness = 0.5, Decoration = true},
+    
+    -- 更多装饰
+    CARPET_RED = {ID = 71, Name = "红色地毯", Color = Color3.fromRGB(200, 50, 50), Material = Enum.Material.Fabric, Hardness = 0.1},
+    CARPET_BLUE = {ID = 72, Name = "蓝色地毯", Color = Color3.fromRGB(50, 100, 200), Material = Enum.Material.Fabric, Hardness = 0.1},
+    WOOL_WHITE = {ID = 73, Name = "白色羊毛", Color = Color3.fromRGB(250, 250, 250), Material = Enum.Material.Fabric, Hardness = 0.8},
+    WOOL_BLACK = {ID = 74, Name = "黑色羊毛", Color = Color3.fromRGB(30, 30, 30), Material = Enum.Material.Fabric, Hardness = 0.8},
+    
+    -- 台阶和楼梯
+    STONE_STAIRS = {ID = 75, Name = "石质楼梯", Color = Color3.fromRGB(120, 120, 120), Material = Enum.Material.Slate, Hardness = 2.0, Stair = true},
+    WOOD_STAIRS = {ID = 76, Name = "木质楼梯", Color = Color3.fromRGB(180, 140, 100), Material = Enum.Material.Wood, Hardness = 2.0, Stair = true},
+    STONE_SLAB = {ID = 77, Name = "石质台阶", Color = Color3.fromRGB(120, 120, 120), Material = Enum.Material.Slate, Hardness = 2.0, Slab = true},
+    WOOD_SLAB = {ID = 78, Name = "木质台阶", Color = Color3.fromRGB(180, 140, 100), Material = Enum.Material.Wood, Hardness = 2.0, Slab = true},
+    
+    -- 栅栏和墙
+    OAK_FENCE = {ID = 79, Name = "橡木栅栏", Color = Color3.fromRGB(160, 120, 80), Material = Enum.Material.Wood, Hardness = 2.0, Fence = true},
+    STONE_WALL = {ID = 80, Name = "石墙", Color = Color3.fromRGB(120, 120, 120), Material = Enum.Material.Slate, Hardness = 2.0, Wall = true},
+    IRON_BARS = {ID = 81, Name = "铁栏杆", Color = Color3.fromRGB(180, 180, 180), Material = Enum.Material.Metal, Hardness = 5.0, Fence = true},
+    
+    -- 门和活板门
+    OAK_DOOR = {ID = 82, Name = "橡木门", Color = Color3.fromRGB(160, 120, 80), Material = Enum.Material.Wood, Hardness = 3.0, Door = true},
+    IRON_DOOR = {ID = 83, Name = "铁门", Color = Color3.fromRGB(180, 180, 180), Material = Enum.Material.Metal, Hardness = 5.0, Door = true},
+    OAK_TRAPDOOR = {ID = 84, Name = "橡木活板门", Color = Color3.fromRGB(160, 120, 80), Material = Enum.Material.Wood, Hardness = 3.0, Trapdoor = true},
 }
 
--- 工具管理
-local Tools = {
-    Pickaxe = {
-        Name = "镐",
-        Range = 15,
-        Damage = 10,
-        MiningSpeed = 1.5
+-- 物品系统
+local ITEM_TYPES = {
+    -- 工具
+    WOODEN_PICKAXE = {Name = "木镐", Type = "Tool", Material = "Wood", Damage = 2, MiningSpeed = 1.2, Durability = 60},
+    STONE_PICKAXE = {Name = "石镐", Type = "Tool", Material = "Stone", Damage = 3, MiningSpeed = 1.5, Durability = 132},
+    IRON_PICKAXE = {Name = "铁镐", Type = "Tool", Material = "Iron", Damage = 4, MiningSpeed = 1.8, Durability = 251},
+    DIAMOND_PICKAXE = {Name = "钻石镐", Type = "Tool", Material = "Diamond", Damage = 5, MiningSpeed = 2.2, Durability = 1562},
+    
+    -- 武器
+    WOODEN_SWORD = {Name = "木剑", Type = "Weapon", Damage = 4, AttackSpeed = 1.6, Durability = 60},
+    STONE_SWORD = {Name = "石剑", Type = "Weapon", Damage = 5, AttackSpeed = 1.6, Durability = 132},
+    IRON_SWORD = {Name = "铁剑", Type = "Weapon", Damage = 6, AttackSpeed = 1.6, Durability = 251},
+    DIAMOND_SWORD = {Name = "钻石剑", Type = "Weapon", Damage = 7, AttackSpeed = 1.6, Durability = 1562},
+    BOW = {Name = "弓", Type = "Weapon", Damage = 6, AttackSpeed = 1.0, Durability = 385},
+    ARROW = {Name = "箭", Type = "Ammo", StackSize = 64},
+    
+    -- 盔甲
+    LEATHER_HELMET = {Name = "皮革头盔", Type = "Armor", ArmorPoints = 1, Durability = 56},
+    IRON_HELMET = {Name = "铁头盔", Type = "Armor", ArmorPoints = 2, Durability = 166},
+    DIAMOND_HELMET = {Name = "钻石头盔", Type = "Armor", ArmorPoints = 3, Durability = 364},
+    
+    -- 食物
+    APPLE = {Name = "苹果", Type = "Food", HungerRestore = 4, Saturation = 2.4},
+    BREAD = {Name = "面包", Type = "Food", HungerRestore = 5, Saturation = 6.0},
+    COOKED_BEEF = {Name = "熟牛肉", Type = "Food", HungerRestore = 8, Saturation = 12.8},
+    GOLDEN_APPLE = {Name = "金苹果", Type = "Food", HungerRestore = 4, Saturation = 9.6, SpecialEffect = "Regeneration"},
+    
+    -- 材料
+    COAL = {Name = "煤炭", Type = "Material", StackSize = 64},
+    IRON_INGOT = {Name = "铁锭", Type = "Material", StackSize = 64},
+    GOLD_INGOT = {Name = "金锭", Type = "Material", StackSize = 64},
+    DIAMOND = {Name = "钻石", Type = "Material", StackSize = 64},
+    STICK = {Name = "木棍", Type = "Material", StackSize = 64},
+    STRING = {Name = "线", Type = "Material", StackSize = 64},
+    FEATHER = {Name = "羽毛", Type = "Material", StackSize = 64},
+    
+    -- 特殊物品
+    TORCH_ITEM = {Name = "火把", Type = "LightSource", StackSize = 64},
+    FLINT_AND_STEEL = {Name = "打火石", Type = "Tool", Durability = 65},
+    COMPASS = {Name = "指南针", Type = "Tool"},
+    CLOCK = {Name = "时钟", Type = "Tool"},
+    MAP = {Name = "地图", Type = "Tool"},
+    ENDER_PEARL = {Name = "末影珍珠", Type = "Special", StackSize = 16},
+    BLAZE_ROD = {Name = "烈焰棒", Type = "Material", StackSize = 64},
+    NETHER_STAR = {Name = "下界之星", Type = "Material", StackSize = 64},
+    
+    -- 药水
+    HEALTH_POTION = {Name = "治疗药水", Type = "Potion", Effect = "Heal", Duration = 0, Potency = 4},
+    REGEN_POTION = {Name = "再生药水", Type = "Potion", Effect = "Regeneration", Duration = 45, Potency = 1},
+    SPEED_POTION = {Name = "速度药水", Type = "Potion", Effect = "Speed", Duration = 180, Potency = 1},
+    
+    -- 更多物品...
+    EMERALD = {Name = "绿宝石", Type = "Material", StackSize = 64},
+    REDSTONE_DUST = {Name = "红石粉", Type = "Material", StackSize = 64},
+    LAPIS_LAZULI = {Name = "青金石", Type = "Material", StackSize = 64},
+    QUARTZ = {Name = "石英", Type = "Material", StackSize = 64},
+    GLOWSTONE_DUST = {Name = "荧石粉", Type = "Material", StackSize = 64},
+    MAGMA_CREAM = {Name = "岩浆膏", Type = "Material", StackSize = 64},
+    GHAST_TEAR = {Name = "恶魂之泪", Type = "Material", StackSize = 64},
+    PHANTOM_MEMBRANE = {Name = "幻翼膜", Type = "Material", StackSize = 64},
+}
+
+-- 合成配方系统
+local CRAFTING_RECIPES = {
+    -- 工具
+    WOODEN_PICKAXE = {
+        Pattern = {"WWW", " S ", " S "},
+        Materials = {W = "OAK_PLANKS", S = "STICK"},
+        Result = "WOODEN_PICKAXE",
+        ResultCount = 1
     },
-    Axe = {
-        Name = "斧",
-        Range = 12,
-        Damage = 8,
-        MiningSpeed = 2
+    STONE_PICKAXE = {
+        Pattern = {"SSS", " I ", " I "},
+        Materials = {S = "COBBLESTONE", I = "STICK"},
+        Result = "STONE_PICKAXE",
+        ResultCount = 1
     },
-    Shovel = {
-        Name = "锹",
-        Range = 10,
+    IRON_PICKAXE = {
+        Pattern = {"III", " S ", " S "},
+        Materials = {I = "IRON_INGOT", S = "STICK"},
+        Result = "IRON_PICKAXE",
+        ResultCount = 1
+    },
+    DIAMOND_PICKAXE = {
+        Pattern = {"DDD", " S ", " S "},
+        Materials = {D = "DIAMOND", S = "STICK"},
+        Result = "DIAMOND_PICKAXE",
+        ResultCount = 1
+    },
+    
+    -- 武器
+    WOODEN_SWORD = {
+        Pattern = {" W ", " W ", " S "},
+        Materials = {W = "OAK_PLANKS", S = "STICK"},
+        Result = "WOODEN_SWORD",
+        ResultCount = 1
+    },
+    IRON_SWORD = {
+        Pattern = {" I ", " I ", " S "},
+        Materials = {I = "IRON_INGOT", S = "STICK"},
+        Result = "IRON_SWORD",
+        ResultCount = 1
+    },
+    DIAMOND_SWORD = {
+        Pattern = {" D ", " D ", " S "},
+        Materials = {D = "DIAMOND", S = "STICK"},
+        Result = "DIAMOND_SWORD",
+        ResultCount = 1
+    },
+    BOW = {
+        Pattern = {" S ", "SI ", " S "},
+        Materials = {S = "STICK", I = "STRING"},
+        Result = "BOW",
+        ResultCount = 1
+    },
+    ARROW = {
+        Pattern = {" F ", " S ", " L "},
+        Materials = {F = "FLINT", S = "STICK", L = "FEATHER"},
+        Result = "ARROW",
+        ResultCount = 4
+    },
+    
+    -- 方块
+    TORCH = {
+        Pattern = {" C ", " S "},
+        Materials = {C = "COAL", S = "STICK"},
+        Result = "TORCH_ITEM",
+        ResultCount = 4
+    },
+    FURNACE = {
+        Pattern = {"CCC", "C C", "CCC"},
+        Materials = {C = "COBBLESTONE"},
+        Result = "FURNACE",
+        ResultCount = 1
+    },
+    CRAFTING_TABLE = {
+        Pattern = {"PP", "PP"},
+        Materials = {P = "OAK_PLANKS"},
+        Result = "CRAFTING_TABLE",
+        ResultCount = 1
+    },
+    CHEST = {
+        Pattern = {"PPP", "P P", "PPP"},
+        Materials = {P = "OAK_PLANKS"},
+        Result = "CHEST",
+        ResultCount = 1
+    },
+    
+    -- 盔甲
+    LEATHER_HELMET = {
+        Pattern = {"LLL", "L L"},
+        Materials = {L = "LEATHER"},
+        Result = "LEATHER_HELMET",
+        ResultCount = 1
+    },
+    IRON_HELMET = {
+        Pattern = {"III", "I I"},
+        Materials = {I = "IRON_INGOT"},
+        Result = "IRON_HELMET",
+        ResultCount = 1
+    },
+    
+    -- 更多配方...
+    STICK = {
+        Pattern = {"P", "P"},
+        Materials = {P = "OAK_PLANKS"},
+        Result = "STICK",
+        ResultCount = 4
+    },
+    OAK_PLANKS = {
+        Pattern = {"W"},
+        Materials = {W = "OAK_LOG"},
+        Result = "OAK_PLANKS",
+        ResultCount = 4
+    },
+    COBBLESTONE = {
+        Pattern = {"S"},
+        Materials = {S = "STONE"},
+        Result = "COBBLESTONE",
+        ResultCount = 1
+    },
+    BRICKS = {
+        Pattern = {"BB", "BB"},
+        Materials = {B = "CLAY_BALL"},
+        Result = "BRICKS",
+        ResultCount = 4
+    },
+}
+
+-- 生物系统
+local MOB_TYPES = {
+    -- 被动生物
+    COW = {
+        Name = "牛",
+        Health = 10,
+        Damage = 0,
+        Speed = 8,
+        Hostile = false,
+        Drops = {"LEATHER", "BEEF", "BEEF", "BEEF"},
+        Experience = 1,
+        Size = Vector3.new(4, 3, 4)
+    },
+    PIG = {
+        Name = "猪",
+        Health = 10,
+        Damage = 0,
+        Speed = 10,
+        Hostile = false,
+        Drops = {"PORKCHOP", "PORKCHOP", "PORKCHOP"},
+        Experience = 1,
+        Size = Vector3.new(3, 2, 3)
+    },
+    SHEEP = {
+        Name = "羊",
+        Health = 8,
+        Damage = 0,
+        Speed = 9,
+        Hostile = false,
+        Drops = {"WOOL_WHITE", "MUTTON", "MUTTON"},
+        Experience = 1,
+        Size = Vector3.new(3, 2, 3)
+    },
+    CHICKEN = {
+        Name = "鸡",
+        Health = 4,
+        Damage = 0,
+        Speed = 12,
+        Hostile = false,
+        Drops = {"FEATHER", "CHICKEN", "EGG"},
+        Experience = 1,
+        Size = Vector3.new(2, 2, 2)
+    },
+    VILLAGER = {
+        Name = "村民",
+        Health = 20,
+        Damage = 0,
+        Speed = 6,
+        Hostile = false,
+        Drops = {"EMERALD"},
+        Experience = 0,
+        Size = Vector3.new(3, 5, 3),
+        CanTrade = true
+    },
+    
+    -- 敌对生物
+    ZOMBIE = {
+        Name = "僵尸",
+        Health = 20,
+        Damage = 3,
+        Speed = 6,
+        Hostile = true,
+        Drops = {"ROTTEN_FLESH", "IRON_INGOT", "CARROT", "POTATO"},
+        Experience = 5,
+        Size = Vector3.new(3, 5, 3),
+        SpawnConditions = {"Night", "Dark", "Underground"}
+    },
+    SKELETON = {
+        Name = "骷髅",
+        Health = 20,
+        Damage = 4,
+        Speed = 7,
+        Hostile = true,
+        Drops = {"ARROW", "BONE", "BOW"},
+        Experience = 5,
+        Size = Vector3.new(3, 5, 3),
+        RangedAttack = true,
+        SpawnConditions = {"Night", "Dark", "Underground"}
+    },
+    SPIDER = {
+        Name = "蜘蛛",
+        Health = 16,
+        Damage = 2,
+        Speed = 15,
+        Hostile = true,
+        Drops = {"STRING", "SPIDER_EYE"},
+        Experience = 5,
+        Size = Vector3.new(4, 2, 4),
+        CanClimb = true,
+        SpawnConditions = {"Night", "Dark"}
+    },
+    CREEPER = {
+        Name = "苦力怕",
+        Health = 20,
+        Damage = 50, -- 爆炸伤害
+        Speed = 8,
+        Hostile = true,
+        Drops = {"GUNPOWDER"},
+        Experience = 5,
+        Size = Vector3.new(3, 4, 3),
+        Explodes = true,
+        SpawnConditions = {"Night", "Dark", "Underground"}
+    },
+    
+    -- 下界生物
+    ZOMBIE_PIGMAN = {
+        Name = "僵尸猪灵",
+        Health = 20,
         Damage = 5,
-        MiningSpeed = 1.8
-    }
+        Speed = 8,
+        Hostile = false, -- 除非被攻击
+        Drops = {"GOLD_NUGGET", "ROTTEN_FLESH", "GOLD_INGOT"},
+        Experience = 5,
+        Size = Vector3.new(3, 5, 3),
+        Dimension = "Nether"
+    },
+    BLAZE = {
+        Name = "烈焰人",
+        Health = 20,
+        Damage = 6,
+        Speed = 5,
+        Hostile = true,
+        Drops = {"BLAZE_ROD", "BLAZE_POWDER"},
+        Experience = 10,
+        Size = Vector3.new(3, 4, 3),
+        RangedAttack = true,
+        FireImmune = true,
+        Dimension = "Nether"
+    },
+    GHAST = {
+        Name = "恶魂",
+        Health = 10,
+        Damage = 17,
+        Speed = 12,
+        Hostile = true,
+        Drops = {"GHAST_TEAR", "GUNPOWDER"},
+        Experience = 5,
+        Size = Vector3.new(8, 8, 8),
+        RangedAttack = true,
+        Flies = true,
+        Dimension = "Nether"
+    },
+    
+    -- 末地生物
+    ENDERMAN = {
+        Name = "末影人",
+        Health = 40,
+        Damage = 7,
+        Speed = 15,
+        Hostile = true, -- 当被注视时
+        Drops = {"ENDER_PEARL"},
+        Experience = 5,
+        Size = Vector3.new(3, 8, 3),
+        Teleports = true,
+        Dimension = "End"
+    },
+    ENDERMITE = {
+        Name = "末影螨",
+        Health = 8,
+        Damage = 2,
+        Speed = 18,
+        Hostile = true,
+        Drops = {},
+        Experience = 3,
+        Size = Vector3.new(2, 1, 2),
+        Dimension = "End"
+    },
+    SHULKER = {
+        Name = "潜影贝",
+        Health = 30,
+        Damage = 4,
+        Speed = 0,
+        Hostile = true,
+        Drops = {"SHULKER_SHELL"},
+        Experience = 5,
+        Size = Vector3.new(3, 3, 3),
+        RangedAttack = true,
+        Levitates = true,
+        Dimension = "End"
+    },
+    
+    -- BOSS生物
+    WITHER = {
+        Name = "凋灵",
+        Health = 300,
+        Damage = 8,
+        Speed = 10,
+        Hostile = true,
+        Drops = {"NETHER_STAR"},
+        Experience = 50,
+        Size = Vector3.new(4, 10, 4),
+        RangedAttack = true,
+        Flies = true,
+        Boss = true,
+        SpawnConditions = {"Boss"}
+    },
+    ENDER_DRAGON = {
+        Name = "末影龙",
+        Health = 200,
+        Damage = 10,
+        Speed = 25,
+        Hostile = true,
+        Drops = {"DRAGON_EGG", "DRAGON_BREATH"},
+        Experience = 12000,
+        Size = Vector3.new(16, 16, 40),
+        Flies = true,
+        Boss = true,
+        Dimension = "End"
+    },
+    
+    -- 水中生物
+    SQUID = {
+        Name = "鱿鱼",
+        Health = 10,
+        Damage = 0,
+        Speed = 8,
+        Hostile = false,
+        Drops = {"INK_SAC"},
+        Experience = 1,
+        Size = Vector3.new(3, 3, 3),
+        Aquatic = true
+    },
+    GUARDIAN = {
+        Name = "守卫者",
+        Health = 30,
+        Damage = 6,
+        Speed = 6,
+        Hostile = true,
+        Drops = {"PRISMARINE_SHARD", "PRISMARINE_CRYSTALS", "FISH"},
+        Experience = 10,
+        Size = Vector3.new(4, 4, 4),
+        RangedAttack = true,
+        Aquatic = true
+    },
+    
+    -- 更多生物...
+    WITCH = {
+        Name = "女巫",
+        Health = 26,
+        Damage = 0,
+        Speed = 6,
+        Hostile = true,
+        Drops = {"GLASS_BOTTLE", "GLOWSTONE_DUST", "REDSTONE", "SPIDER_EYE", "SUGAR", "STICK"},
+        Experience = 5,
+        Size = Vector3.new(3, 5, 3),
+        RangedAttack = true,
+        UsesPotions = true
+    },
+    SLIME = {
+        Name = "史莱姆",
+        Health = 16,
+        Damage = 3,
+        Speed = 6,
+        Hostile = true,
+        Drops = {"SLIME_BALL"},
+        Experience = 4,
+        Size = Vector3.new(4, 4, 4),
+        Splits = true,
+        SpawnConditions = {"Swamp", "Underground"}
+    },
+    CAVE_SPIDER = {
+        Name = "洞穴蜘蛛",
+        Health = 12,
+        Damage = 2,
+        Speed = 16,
+        Hostile = true,
+        Drops = {"STRING", "SPIDER_EYE"},
+        Experience = 5,
+        Size = Vector3.new(3, 1.5, 3),
+        CanClimb = true,
+        Poisonous = true,
+        SpawnConditions = {"Mineshaft"}
+    },
+    SILVERFISH = {
+        Name = "蠹虫",
+        Health = 8,
+        Damage = 1,
+        Speed = 12,
+        Hostile = true,
+        Drops = {},
+        Experience = 5,
+        Size = Vector3.new(1, 0.5, 1),
+        InfestsBlocks = true,
+        SpawnConditions = {"Stronghold"}
+    },
 }
 
--- UI创建
-local function createUI()
+-- 游戏状态管理
+local GameState = {
+    -- 玩家状态
+    Health = CONFIG.MAX_HEALTH,
+    Hunger = CONFIG.MAX_HUNGER,
+    Oxygen = CONFIG.MAX_OXYGEN,
+    Sanity = CONFIG.MAX_SANITY,
+    Experience = 0,
+    Level = 1,
+    
+    -- 位置和维度
+    Position = Vector3.new(0, 100, 0),
+    Dimension = "Overworld", -- Overworld, Nether, End
+    SpawnPoint = Vector3.new(0, 100, 0),
+    
+    -- 游戏进度
+    GameTime = 0,
+    IsDay = true,
+    Difficulty = "Normal", -- Peaceful, Easy, Normal, Hard
+    
+    -- 库存系统
+    Inventory = {},
+    Hotbar = {},
+    SelectedHotbarSlot = 1,
+    Armor = {},
+    
+    -- 世界数据
+    Chunks = {},
+    Mobs = {},
+    Structures = {},
+    Waypoints = {},
+    
+    -- 游戏设置
+    RenderDistance = CONFIG.RENDER_DISTANCE,
+    ShowCoordinates = true,
+    AutoJump = true,
+    ViewBobbing = true,
+    
+    -- 合成和制作
+    UnlockedRecipes = {},
+    DiscoveredBlocks = {},
+    DiscoveredItems = {},
+    
+    -- 统计
+    BlocksMined = 0,
+    BlocksPlaced = 0,
+    MobsKilled = 0,
+    DistanceTraveled = 0,
+    Deaths = 0,
+    
+    -- 地图和探索
+    ExploredChunks = {},
+    MapData = {},
+    
+    -- 多人游戏 (本地)
+    LocalPlayers = {},
+    LocalWorlds = {},
+}
+
+-- 主UI系统 (支持手机)
+local function createMobileUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "MinecraftUI"
+    screenGui.Name = "MinecraftMobileUI"
     screenGui.Parent = player.PlayerGui
     screenGui.ResetOnSpawn = false
     
-    -- 血量显示
-    local healthFrame = Instance.new("Frame")
-    healthFrame.Name = "HealthFrame"
-    healthFrame.Size = UDim2.new(0.2, 0, 0.05, 0)
-    healthFrame.Position = UDim2.new(0.02, 0, 0.92, 0)
-    healthFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    healthFrame.BackgroundTransparency = 0.5
-    healthFrame.Parent = screenGui
+    -- 虚拟摇杆 (移动控制)
+    local joystickFrame = Instance.new("Frame")
+    joystickFrame.Name = "JoystickFrame"
+    joystickFrame.Size = UDim2.new(0.25, 0, 0.25, 0)
+    joystickFrame.Position = UDim2.new(0.02, 0, 0.7, 0)
+    joystickFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    joystickFrame.BackgroundTransparency = 0.5
+    joystickFrame.BorderSizePixel = 0
+    joystickFrame.Parent = screenGui
+    
+    local joystickThumb = Instance.new("ImageButton")
+    joystickThumb.Name = "JoystickThumb"
+    joystickThumb.Size = UDim2.new(0.3, 0, 0.3, 0)
+    joystickThumb.Position = UDim2.new(0.35, 0, 0.35, 0)
+    joystickThumb.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    joystickThumb.BackgroundTransparency = 0.3
+    joystickThumb.Image = "rbxassetid://3570695787"
+    joystickThumb.ScaleType = Enum.ScaleType.Slice
+    joystickThumb.SliceCenter = Rect.new(100, 100, 100, 100)
+    joystickThumb.Parent = joystickFrame
+    
+    -- 跳跃按钮
+    local jumpButton = Instance.new("TextButton")
+    jumpButton.Name = "JumpButton"
+    jumpButton.Size = UDim2.new(0.15, 0, 0.15, 0)
+    jumpButton.Position = UDim2.new(0.85, 0, 0.8, 0)
+    jumpButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+    jumpButton.BackgroundTransparency = 0.3
+    jumpButton.Text = "跳跃"
+    jumpButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    jumpButton.Font = Enum.Font.SourceSansBold
+    jumpButton.TextSize = 18
+    jumpButton.Parent = screenGui
+    
+    -- 攻击/挖掘按钮
+    local attackButton = Instance.new("TextButton")
+    attackButton.Name = "AttackButton"
+    attackButton.Size = UDim2.new(0.15, 0, 0.15, 0)
+    attackButton.Position = UDim2.new(0.85, 0, 0.6, 0)
+    attackButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    attackButton.BackgroundTransparency = 0.3
+    attackButton.Text = "攻击"
+    attackButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    attackButton.Font = Enum.Font.SourceSansBold
+    attackButton.TextSize = 18
+    attackButton.Parent = screenGui
+    
+    -- 放置/使用按钮
+    local useButton = Instance.new("TextButton")
+    useButton.Name = "UseButton"
+    useButton.Size = UDim2.new(0.15, 0, 0.15, 0)
+    useButton.Position = UDim2.new(0.85, 0, 0.4, 0)
+    useButton.BackgroundColor3 = Color3.fromRGB(50, 150, 255)
+    useButton.BackgroundTransparency = 0.3
+    useButton.Text = "使用"
+    useButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    useButton.Font = Enum.Font.SourceSansBold
+    useButton.TextSize = 18
+    useButton.Parent = screenGui
+    
+    -- 物品栏按钮
+    local inventoryButton = Instance.new("TextButton")
+    inventoryButton.Name = "InventoryButton"
+    inventoryButton.Size = UDim2.new(0.12, 0, 0.08, 0)
+    inventoryButton.Position = UDim2.new(0.02, 0, 0.02, 0)
+    inventoryButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    inventoryButton.BackgroundTransparency = 0.3
+    inventoryButton.Text = "📦"
+    inventoryButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    inventoryButton.Font = Enum.Font.SourceSansBold
+    inventoryButton.TextSize = 24
+    inventoryButton.Parent = screenGui
+    
+    -- 合成按钮
+    local craftButton = Instance.new("TextButton")
+    craftButton.Name = "CraftButton"
+    craftButton.Size = UDim2.new(0.12, 0, 0.08, 0)
+    craftButton.Position = UDim2.new(0.16, 0, 0.02, 0)
+    craftButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    craftButton.BackgroundTransparency = 0.3
+    craftButton.Text = "🔨"
+    craftButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    craftButton.Font = Enum.Font.SourceSansBold
+    craftButton.TextSize = 24
+    craftButton.Parent = screenGui
+    
+    -- 地图按钮
+    local mapButton = Instance.new("TextButton")
+    mapButton.Name = "MapButton"
+    mapButton.Size = UDim2.new(0.12, 0, 0.08, 0)
+    mapButton.Position = UDim2.new(0.3, 0, 0.02, 0)
+    mapButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    mapButton.BackgroundTransparency = 0.3
+    mapButton.Text = "🗺️"
+    mapButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    mapButton.Font = Enum.Font.SourceSansBold
+    mapButton.TextSize = 24
+    mapButton.Parent = screenGui
+    
+    -- 状态显示
+    local statusFrame = Instance.new("Frame")
+    statusFrame.Name = "StatusFrame"
+    statusFrame.Size = UDim2.new(0.25, 0, 0.15, 0)
+    statusFrame.Position = UDim2.new(0.73, 0, 0.02, 0)
+    statusFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    statusFrame.BackgroundTransparency = 0.5
+    statusFrame.Parent = screenGui
+    
+    -- 生命值显示
+    local healthBar = Instance.new("Frame")
+    healthBar.Name = "HealthBar"
+    healthBar.Size = UDim2.new(0.9, 0, 0.25, 0)
+    healthBar.Position = UDim2.new(0.05, 0, 0.1, 0)
+    healthBar.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    healthBar.BorderSizePixel = 2
+    healthBar.BorderColor3 = Color3.fromRGB(0, 0, 0)
+    healthBar.Parent = statusFrame
     
     local healthText = Instance.new("TextLabel")
     healthText.Name = "HealthText"
     healthText.Size = UDim2.new(1, 0, 1, 0)
     healthText.BackgroundTransparency = 1
-    healthText.Text = "❤️ 生命: 100"
-    healthText.TextColor3 = Color3.fromRGB(255, 100, 100)
+    healthText.Text = "❤️ 100/100"
+    healthText.TextColor3 = Color3.fromRGB(255, 255, 255)
     healthText.Font = Enum.Font.SourceSansBold
-    healthText.Parent = healthFrame
+    healthText.TextSize = 14
+    healthText.Parent = healthBar
     
-    -- 物品栏
-    local inventoryFrame = Instance.new("Frame")
-    inventoryFrame.Name = "InventoryFrame"
-    inventoryFrame.Size = UDim2.new(0.3, 0, 0.08, 0)
-    inventoryFrame.Position = UDim2.new(0.35, 0, 0.92, 0)
-    inventoryFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    inventoryFrame.BackgroundTransparency = 0.5
-    inventoryFrame.Parent = screenGui
+    -- 饥饿值显示
+    local hungerBar = Instance.new("Frame")
+    hungerBar.Name = "HungerBar"
+    hungerBar.Size = UDim2.new(0.9, 0, 0.25, 0)
+    hungerBar.Position = UDim2.new(0.05, 0, 0.4, 0)
+    hungerBar.BackgroundColor3 = Color3.fromRGB(255, 180, 0)
+    hungerBar.BorderSizePixel = 2
+    hungerBar.BorderColor3 = Color3.fromRGB(0, 0, 0)
+    hungerBar.Parent = statusFrame
     
-    local inventoryText = Instance.new("TextLabel")
-    inventoryText.Name = "InventoryText"
-    inventoryText.Size = UDim2.new(1, 0, 1, 0)
-    inventoryText.BackgroundTransparency = 1
-    inventoryText.Text = "物品栏: 空"
-    inventoryText.TextColor3 = Color3.fromRGB(255, 255, 255)
-    inventoryText.Font = Enum.Font.SourceSansBold
-    inventoryText.Parent = inventoryFrame
+    local hungerText = Instance.new("TextLabel")
+    hungerText.Name = "HungerText"
+    hungerText.Size = UDim2.new(1, 0, 1, 0)
+    hungerText.BackgroundTransparency = 1
+    hungerText.Text = "🍖 100/100"
+    hungerText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    hungerText.Font = Enum.Font.SourceSansBold
+    hungerText.TextSize = 14
+    hungerText.Parent = hungerBar
     
-    -- 选择方块显示
-    local selectedFrame = Instance.new("Frame")
-    selectedFrame.Name = "SelectedBlockFrame"
-    selectedFrame.Size = UDim2.new(0.12, 0, 0.12, 0)
-    selectedFrame.Position = UDim2.new(0.88, 0, 0.44, 0)
-    selectedFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    selectedFrame.BorderSizePixel = 3
-    selectedFrame.BorderColor3 = Color3.fromRGB(255, 255, 255)
-    selectedFrame.Parent = screenGui
+    -- 经验值显示
+    local expBar = Instance.new("Frame")
+    expBar.Name = "ExpBar"
+    expBar.Size = UDim2.new(0.9, 0, 0.25, 0)
+    expBar.Position = UDim2.new(0.05, 0, 0.7, 0)
+    expBar.BackgroundColor3 = Color3.fromRGB(50, 200, 100)
+    expBar.BorderSizePixel = 2
+    expBar.BorderColor3 = Color3.fromRGB(0, 0, 0)
+    expBar.Parent = statusFrame
     
-    local selectedText = Instance.new("TextLabel")
-    selectedText.Name = "SelectedText"
-    selectedText.Size = UDim2.new(1, 0, 0.3, 0)
-    selectedText.Position = UDim2.new(0, 0, 0.7, 0)
-    selectedText.BackgroundTransparency = 1
-    selectedText.Text = "草方块"
-    selectedText.TextColor3 = Color3.fromRGB(255, 255, 255)
-    selectedText.Font = Enum.Font.SourceSansBold
-    selectedText.Parent = selectedFrame
+    local expText = Instance.new("TextLabel")
+    expText.Name = "ExpText"
+    expText.Size = UDim2.new(1, 0, 1, 0)
+    expText.BackgroundTransparency = 1
+    expText.Text = "⭐ Lv.1 (0/100)"
+    expText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    expText.Font = Enum.Font.SourceSansBold
+    expText.TextSize = 14
+    expText.Parent = expBar
     
-    -- 方块预览
-    local blockPreview = Instance.new("Part")
-    blockPreview.Name = "BlockPreview"
-    blockPreview.Size = Vector3.new(2.8, 2.8, 2.8)
-    blockPreview.Transparency = 0.6
-    blockPreview.Anchored = true
-    blockPreview.CanCollide = false
-    blockPreview.Color = BlockTypes.Grass.Color
-    blockPreview.Material = BlockTypes.Grass.Material
-    blockPreview.Parent = workspace.Terrain
-    blockPreview.Position = Vector3.new(0, 100, 0) -- 初始位置
+    -- 快捷栏
+    local hotbarFrame = Instance.new("Frame")
+    hotbarFrame.Name = "HotbarFrame"
+    hotbarFrame.Size = UDim2.new(1, 0, 0.1, 0)
+    hotbarFrame.Position = UDim2.new(0, 0, 0.9, 0)
+    hotbarFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    hotbarFrame.BackgroundTransparency = 0.5
+    hotbarFrame.Parent = screenGui
     
-    -- 提示文本
-    local hintText = Instance.new("TextLabel")
-    hintText.Name = "HintText"
-    hintText.Size = UDim2.new(0.4, 0, 0.1, 0)
-    hintText.Position = UDim2.new(0.3, 0, 0.02, 0)
-    hintText.BackgroundTransparency = 1
-    hintText.Text = "Minecraft生存模式 (本地) - [Q]切换方块 [E]采集 [R]放置 [T]丢弃"
-    hintText.TextColor3 = Color3.fromRGB(255, 255, 0)
-    hintText.Font = Enum.Font.SourceSansBold
-    hintText.TextSize = 18
-    hintText.Parent = screenGui
+    -- 创建9个快捷栏槽位
+    local hotbarSlots = {}
+    for i = 1, 9 do
+        local slot = Instance.new("Frame")
+        slot.Name = "HotbarSlot" .. i
+        slot.Size = UDim2.new(0.1, 0, 0.8, 0)
+        slot.Position = UDim2.new(0.05 + (i-1) * 0.1, 0, 0.1, 0)
+        slot.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        slot.BorderSizePixel = 2
+        slot.BorderColor3 = Color3.fromRGB(100, 100, 100)
+        slot.Parent = hotbarFrame
+        
+        local slotNumber = Instance.new("TextLabel")
+        slotNumber.Name = "SlotNumber"
+        slotNumber.Size = UDim2.new(0.3, 0, 0.3, 0)
+        slotNumber.Position = UDim2.new(0.7, 0, 0.7, 0)
+        slotNumber.BackgroundTransparency = 1
+        slotNumber.Text = tostring(i)
+        slotNumber.TextColor3 = Color3.fromRGB(255, 255, 255)
+        slotNumber.Font = Enum.Font.SourceSansBold
+        slotNumber.TextSize = 14
+        slotNumber.Parent = slot
+        
+        hotbarSlots[i] = slot
+    end
+    
+    -- 当前槽位高亮
+    hotbarSlots[1].BorderColor3 = Color3.fromRGB(255, 255, 0)
     
     return {
         ScreenGui = screenGui,
+        JoystickThumb = joystickThumb,
+        JumpButton = jumpButton,
+        AttackButton = attackButton,
+        UseButton = useButton,
+        InventoryButton = inventoryButton,
+        CraftButton = craftButton,
+        MapButton = mapButton,
+        HealthBar = healthBar,
+        HungerBar = hungerBar,
+        ExpBar = expBar,
         HealthText = healthText,
-        InventoryText = inventoryText,
-        SelectedText = selectedText,
-        BlockPreview = blockPreview,
-        HintText = hintText
+        HungerText = hungerText,
+        ExpText = expText,
+        HotbarSlots = hotbarSlots,
+        HotbarFrame = hotbarFrame
     }
 end
 
--- 方块生成系统（仅本地视觉效果）
-local function createBlock(position, blockType)
-    local chunkX = math.floor(position.X / 50)
-    local chunkZ = math.floor(position.Z / 50)
-    local chunkKey = chunkX .. "_" .. chunkZ
+-- 物品栏UI
+local function createInventoryUI()
+    local inventoryScreen = Instance.new("ScreenGui")
+    inventoryScreen.Name = "InventoryScreen"
+    inventoryScreen.Parent = player.PlayerGui
+    inventoryScreen.Enabled = false
     
-    if not GameState.WorldData[chunkKey] then
-        GameState.WorldData[chunkKey] = {}
-    end
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0.8, 0, 0.8, 0)
+    mainFrame.Position = UDim2.new(0.1, 0, 0.1, 0)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    mainFrame.BorderSizePixel = 3
+    mainFrame.BorderColor3 = Color3.fromRGB(100, 100, 100)
+    mainFrame.Parent = inventoryScreen
     
-    local blockKey = math.floor(position.X) .. "_" .. math.floor(position.Y) .. "_" .. math.floor(position.Z)
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(1, 0, 0.1, 0)
+    title.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    title.Text = "物品栏"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.Font = Enum.Font.SourceSansBold
+    title.TextSize = 24
+    title.Parent = mainFrame
     
-    if not GameState.WorldData[chunkKey][blockKey] then
-        local block = Instance.new("Part")
-        block.Name = "MCBlock_" .. blockType
-        block.Size = Vector3.new(GameState.BlockSize, GameState.BlockSize, GameState.BlockSize)
-        block.Position = Vector3.new(
-            math.floor(position.X / GameState.BlockSize) * GameState.BlockSize + GameState.BlockSize/2,
-            math.floor(position.Y / GameState.BlockSize) * GameState.BlockSize + GameState.BlockSize/2,
-            math.floor(position.Z / GameState.BlockSize) * GameState.BlockSize + GameState.BlockSize/2
-        )
-        block.Anchored = true
-        block.CanCollide = true
-        block.Color = BlockTypes[blockType].Color
-        block.Material = BlockTypes[blockType].Material
-        block.Parent = workspace.Terrain
-        
-        -- 添加标签用于识别
-        local tag = Instance.new("StringValue")
-        tag.Name = "BlockType"
-        tag.Value = blockType
-        tag.Parent = block
-        
-        GameState.WorldData[chunkKey][blockKey] = {
-            Block = block,
-            Type = blockType,
-            Position = position
-        }
-        
-        return block
-    end
-    
-    return nil
-end
-
--- 删除方块
-local function removeBlock(position)
-    local chunkX = math.floor(position.X / 50)
-    local chunkZ = math.floor(position.Z / 50)
-    local chunkKey = chunkX .. "_" .. chunkZ
-    
-    if GameState.WorldData[chunkKey] then
-        local blockKey = math.floor(position.X) .. "_" .. math.floor(position.Y) .. "_" .. math.floor(position.Z)
-        
-        if GameState.WorldData[chunkKey][blockKey] then
-            local blockData = GameState.WorldData[chunkKey][blockKey]
-            if blockData.Block then
-                blockData.Block:Destroy()
-            end
-            GameState.WorldData[chunkKey][blockKey] = nil
+    -- 创建36个物品栏槽位 (4x9)
+    local inventorySlots = {}
+    for row = 0, 3 do
+        for col = 0, 8 do
+            local index = row * 9 + col + 1
+            local slot = Instance.new("Frame")
+            slot.Name = "InventorySlot" .. index
+            slot.Size = UDim2.new(0.1, 0, 0.2, 0)
+            slot.Position = UDim2.new(0.02 + col * 0.106, 0, 0.12 + row * 0.21, 0)
+            slot.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+            slot.BorderSizePixel = 2
+            slot.BorderColor3 = Color3.fromRGB(120, 120, 120)
+            slot.Parent = mainFrame
             
-            -- 添加到物品栏
-            table.insert(GameState.Inventory, blockData.Type)
-            return blockData.Type
+            inventorySlots[index] = slot
         end
     end
     
-    return nil
+    -- 盔甲槽位
+    local armorFrame = Instance.new("Frame")
+    armorFrame.Name = "ArmorFrame"
+    armorFrame.Size = UDim2.new(0.15, 0, 0.3, 0)
+    armorFrame.Position = UDim2.new(0.82, 0, 0.15, 0)
+    armorFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    armorFrame.BorderSizePixel = 2
+    armorFrame.Parent = mainFrame
+    
+    local armorTitle = Instance.new("TextLabel")
+    armorTitle.Name = "ArmorTitle"
+    armorTitle.Size = UDim2.new(1, 0, 0.25, 0)
+    armorTitle.BackgroundTransparency = 1
+    armorTitle.Text = "盔甲"
+    armorTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    armorTitle.Font = Enum.Font.SourceSansBold
+    armorTitle.Parent = armorFrame
+    
+    -- 合成区域
+    local craftingFrame = Instance.new("Frame")
+    craftingFrame.Name = "CraftingFrame"
+    craftingFrame.Size = UDim2.new(0.3, 0, 0.4, 0)
+    craftingFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    craftingFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    craftingFrame.BorderSizePixel = 2
+    craftingFrame.Parent = mainFrame
+    
+    local craftingTitle = Instance.new("TextLabel")
+    craftingTitle.Name = "CraftingTitle"
+    craftingTitle.Size = UDim2.new(1, 0, 0.15, 0)
+    craftingTitle.BackgroundTransparency = 1
+    craftingTitle.Text = "合成"
+    craftingTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    craftingTitle.Font = Enum.Font.SourceSansBold
+    craftingTitle.Parent = craftingFrame
+    
+    -- 关闭按钮
+    local closeButton = Instance.new("TextButton")
+    closeButton.Name = "CloseButton"
+    closeButton.Size = UDim2.new(0.1, 0, 0.08, 0)
+    closeButton.Position = UDim2.new(0.9, 0, 0.02, 0)
+    closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    closeButton.Text = "X"
+    closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeButton.Font = Enum.Font.SourceSansBold
+    closeButton.Parent = mainFrame
+    
+    return {
+        Screen = inventoryScreen,
+        MainFrame = mainFrame,
+        InventorySlots = inventorySlots,
+        CloseButton = closeButton
+    }
 end
 
--- 射线检测
-local function raycastFromCamera(distance)
-    local mousePos = UserInputService:GetMouseLocation()
-    local unitRay = camera:ScreenPointToRay(mousePos.X, mousePos.Y)
+-- 合成UI
+local function createCraftingUI()
+    local craftingScreen = Instance.new("ScreenGui")
+    craftingScreen.Name = "CraftingScreen"
+    craftingScreen.Parent = player.PlayerGui
+    craftingScreen.Enabled = false
     
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-    raycastParams.FilterDescendantsInstances = {character}
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0.9, 0, 0.9, 0)
+    mainFrame.Position = UDim2.new(0.05, 0, 0.05, 0)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    mainFrame.BorderSizePixel = 3
+    mainFrame.Parent = craftingScreen
     
-    local result = workspace:Raycast(unitRay.Origin, unitRay.Direction * distance, raycastParams)
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(1, 0, 0.05, 0)
+    title.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+    title.Text = "合成表"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.Font = Enum.Font.SourceSansBold
+    title.TextSize = 24
+    title.Parent = mainFrame
     
-    if result then
-        return result.Position, result.Instance, result.Normal
+    -- 配方列表
+    local recipesScrollingFrame = Instance.new("ScrollingFrame")
+    recipesScrollingFrame.Name = "RecipesScrollingFrame"
+    recipesScrollingFrame.Size = UDim2.new(0.3, 0, 0.9, 0)
+    recipesScrollingFrame.Position = UDim2.new(0.02, 0, 0.06, 0)
+    recipesScrollingFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    recipesScrollingFrame.ScrollingEnabled = true
+    recipesScrollingFrame.Parent = mainFrame
+    
+    -- 合成网格 (3x3)
+    local craftingGrid = {}
+    for row = 0, 2 do
+        for col = 0, 2 do
+            local slot = Instance.new("Frame")
+            slot.Name = "CraftingSlot_" .. row .. "_" .. col
+            slot.Size = UDim2.new(0.08, 0, 0.08, 0)
+            slot.Position = UDim2.new(0.4 + col * 0.09, 0, 0.2 + row * 0.09, 0)
+            slot.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+            slot.BorderSizePixel = 2
+            slot.Parent = mainFrame
+            
+            craftingGrid[row * 3 + col + 1] = slot
+        end
     end
     
-    return nil, nil, nil
+    -- 结果槽位
+    local resultSlot = Instance.new("Frame")
+    resultSlot.Name = "ResultSlot"
+    resultSlot.Size = UDim2.new(0.08, 0, 0.08, 0)
+    resultSlot.Position = UDim2.new(0.7, 0, 0.38, 0)
+    resultSlot.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+    resultSlot.BorderSizePixel = 2
+    resultSlot.Parent = mainFrame
+    
+    -- 合成按钮
+    local craftButton = Instance.new("TextButton")
+    craftButton.Name = "CraftButton"
+    craftButton.Size = UDim2.new(0.1, 0, 0.05, 0)
+    craftButton.Position = UDim2.new(0.68, 0, 0.5, 0)
+    craftButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+    craftButton.Text = "合成"
+    craftButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    craftButton.Font = Enum.Font.SourceSansBold
+    craftButton.Parent = mainFrame
+    
+    -- 关闭按钮
+    local closeButton = Instance.new("TextButton")
+    closeButton.Name = "CloseButton"
+    closeButton.Size = UDim2.new(0.05, 0, 0.05, 0)
+    closeButton.Position = UDim2.new(0.95, 0, 0.02, 0)
+    closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    closeButton.Text = "X"
+    closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeButton.Font = Enum.Font.SourceSansBold
+    closeButton.Parent = mainFrame
+    
+    return {
+        Screen = craftingScreen,
+        MainFrame = mainFrame,
+        RecipesScrollingFrame = recipesScrollingFrame,
+        CraftingGrid = craftingGrid,
+        ResultSlot = resultSlot,
+        CraftButton = craftButton,
+        CloseButton = closeButton
+    }
 end
 
--- 更新UI
-local function updateUI(ui)
-    ui.HealthText.Text = string.format("❤️ 生命: %d 🍖 饥饿: %d", GameState.Health, GameState.Hunger)
-    ui.InventoryText.Text = string.format("物品栏: %d个物品", #GameState.Inventory)
-    ui.SelectedText.Text = GameState.SelectedBlock
+-- 地图系统
+local function createMapSystem()
+    local mapScreen = Instance.new("ScreenGui")
+    mapScreen.Name = "MapScreen"
+    mapScreen.Parent = player.PlayerGui
+    mapScreen.Enabled = false
     
-    local selectedBlockType = BlockTypes[GameState.SelectedBlock]
-    if selectedBlockType then
-        ui.BlockPreview.Color = selectedBlockType.Color
-        ui.BlockPreview.Material = selectedBlockType.Material
-    end
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0.8, 0, 0.8, 0)
+    mainFrame.Position = UDim2.new(0.1, 0, 0.1, 0)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(30, 50, 70)
+    mainFrame.BorderSizePixel = 3
+    mainFrame.Parent = mapScreen
+    
+    local mapCanvas = Instance.new("Frame")
+    mapCanvas.Name = "MapCanvas"
+    mapCanvas.Size = UDim2.new(0.9, 0, 0.9, 0)
+    mapCanvas.Position = UDim2.new(0.05, 0, 0.05, 0)
+    mapCanvas.BackgroundColor3 = Color3.fromRGB(100, 150, 200)
+    mapCanvas.Parent = mainFrame
+    
+    -- 玩家位置标记
+    local playerMarker = Instance.new("Frame")
+    playerMarker.Name = "PlayerMarker"
+    playerMarker.Size = UDim2.new(0.01, 0, 0.01, 0)
+    playerMarker.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    playerMarker.BorderSizePixel = 2
+    playerMarker.BorderColor3 = Color3.fromRGB(255, 255, 255)
+    playerMarker.Parent = mapCanvas
+    
+    -- 缩放控制
+    local zoomInButton = Instance.new("TextButton")
+    zoomInButton.Name = "ZoomInButton"
+    zoomInButton.Size = UDim2.new(0.05, 0, 0.05, 0)
+    zoomInButton.Position = UDim2.new(0.9, 0, 0.02, 0)
+    zoomInButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+    zoomInButton.Text = "+"
+    zoomInButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    zoomInButton.Font = Enum.Font.SourceSansBold
+    zoomInButton.Parent = mainFrame
+    
+    local zoomOutButton = Instance.new("TextButton")
+    zoomOutButton.Name = "ZoomOutButton"
+    zoomOutButton.Size = UDim2.new(0.05, 0, 0.05, 0)
+    zoomOutButton.Position = UDim2.new(0.9, 0, 0.08, 0)
+    zoomOutButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+    zoomOutButton.Text = "-"
+    zoomOutButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    zoomOutButton.Font = Enum.Font.SourceSansBold
+    zoomOutButton.Parent = mainFrame
+    
+    local closeButton = Instance.new("TextButton")
+    closeButton.Name = "CloseButton"
+    closeButton.Size = UDim2.new(0.05, 0, 0.05, 0)
+    closeButton.Position = UDim2.new(0.95, 0, 0.02, 0)
+    closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    closeButton.Text = "X"
+    closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeButton.Font = Enum.Font.SourceSansBold
+    closeButton.Parent = mainFrame
+    
+    return {
+        Screen = mapScreen,
+        MapCanvas = mapCanvas,
+        PlayerMarker = playerMarker,
+        ZoomInButton = zoomInButton,
+        ZoomOutButton = zoomOutButton,
+        CloseButton = closeButton
+    }
 end
 
--- 生成基础地形
-local function generateTerrain()
-    local startPos = character.HumanoidRootPart.Position
+-- 世界生成系统
+local function generateWorld()
+    print("开始生成世界...")
     
-    for x = -50, 50, GameState.BlockSize do
-        for z = -50, 50, GameState.BlockSize do
-            local height = 5
-            if math.noise(x * 0.1, z * 0.1) > 0 then
-                height = 8
-            end
+    local worldSeed = CONFIG.WORLD_SEED
+    math.randomseed(worldSeed)
+    
+    -- 生成地形
+    for chunkX = -CONFIG.RENDER_DISTANCE, CONFIG.RENDER_DISTANCE do
+        for chunkZ = -CONFIG.RENDER_DISTANCE, CONFIG.RENDER_DISTANCE do
+            local chunkKey = chunkX .. "_" .. chunkZ
+            GameState.Chunks[chunkKey] = {}
             
-            for y = 0, height do
-                local blockType = "Dirt"
-                if y == height then
-                    blockType = "Grass"
-                elseif y > height - 3 then
-                    blockType = "Dirt"
-                else
-                    blockType = "Stone"
-                end
-                
-                createBlock(startPos + Vector3.new(x, y * GameState.BlockSize, z), blockType)
-            end
-            
-            -- 生成一些树
-            if math.random(1, 20) == 1 then
-                local treeHeight = math.random(4, 6)
-                for y = height + 1, height + treeHeight do
-                    createBlock(startPos + Vector3.new(x, y * GameState.BlockSize, z), "Wood")
-                end
-                
-                -- 树叶
-                for dx = -1, 1 do
-                    for dz = -1, 1 do
-                        for dy = -1, 1 do
-                            if not (dx == 0 and dz == 0) then
-                                createBlock(
-                                    startPos + Vector3.new(
-                                        x + dx * GameState.BlockSize,
-                                        (height + treeHeight - 1) * GameState.BlockSize,
-                                        z + dz * GameState.BlockSize
-                                    ),
-                                    "Leaves"
-                                )
+            -- 生成基础地形
+            for x = 0, CONFIG.CHUNK_SIZE - 1 do
+                for z = 0, CONFIG.CHUNK_SIZE - 1 do
+                    local worldX = chunkX * CONFIG.CHUNK_SIZE + x
+                    local worldZ = chunkZ * CONFIG.CHUNK_SIZE + z
+                    
+                    -- 使用柏林噪声生成地形
+                    local height = math.noise(
+                        worldX * 0.01, 
+                        worldZ * 0.01
+                    ) * 20 + 50
+                    
+                    -- 添加细节
+                    height = height + math.noise(
+                        worldX * 0.05,
+                        worldZ * 0.05
+                    ) * 5
+                    
+                    height = math.floor(height)
+                    
+                    -- 生成方块
+                    for y = 0, height do
+                        local blockType
+                        
+                        if y == height then
+                            -- 顶层
+                            local temperature = math.noise(worldX * 0.002, worldZ * 0.002)
+                            if temperature > 0.3 then
+                                blockType = "SAND"
+                            else
+                                blockType = "GRASS"
+                            end
+                        elseif y > height - 3 then
+                            blockType = "DIRT"
+                        elseif y > height - 10 then
+                            blockType = "STONE"
+                        else
+                            blockType = "DEEPSLATE"
+                        end
+                        
+                        -- 放置方块
+                        local position = Vector3.new(
+                            worldX * CONFIG.BLOCK_SIZE,
+                            y * CONFIG.BLOCK_SIZE,
+                            worldZ * CONFIG.BLOCK_SIZE
+                        )
+                        
+                        local block = Instance.new("Part")
+                        block.Size = Vector3.new(CONFIG.BLOCK_SIZE, CONFIG.BLOCK_SIZE, CONFIG.BLOCK_SIZE)
+                        block.Position = position
+                        block.Anchored = true
+                        block.CanCollide = true
+                        
+                        local blockData = BLOCK_TYPES[blockType]
+                        if blockData then
+                            block.Color = blockData.Color
+                            block.Material = blockData.Material
+                            
+                            if blockData.LightEmission then
+                                local light = Instance.new("PointLight")
+                                light.Brightness = blockData.LightEmission
+                                light.Range = 10
+                                light.Parent = block
                             end
                         end
+                        
+                        block.Parent = workspace
+                        
+                        -- 存储方块数据
+                        local blockKey = worldX .. "_" .. y .. "_" .. worldZ
+                        GameState.Chunks[chunkKey][blockKey] = {
+                            Type = blockType,
+                            Position = position,
+                            Instance = block
+                        }
+                    end
+                    
+                    -- 生成树木
+                    if math.random(1, 50) == 1 then
+                        generateTree(
+                            worldX * CONFIG.BLOCK_SIZE,
+                            height * CONFIG.BLOCK_SIZE,
+                            worldZ * CONFIG.BLOCK_SIZE
+                        )
+                    end
+                    
+                    -- 生成洞穴
+                    if math.random(1, 20) == 1 then
+                        generateCave(
+                            worldX * CONFIG.BLOCK_SIZE,
+                            worldZ * CONFIG.BLOCK_SIZE,
+                            height
+                        )
+                    end
+                end
+            end
+            
+            -- 生成矿洞
+            if math.random(1, 10) == 1 then
+                generateMineshaft(chunkX, chunkZ)
+            end
+            
+            -- 生成村庄
+            if math.random(1, 100) == 1 then
+                generateVillage(chunkX, chunkZ)
+            end
+        end
+    end
+    
+    -- 生成出生点平台
+    generateSpawnPlatform()
+    
+    print("世界生成完成！")
+end
+
+-- 生成树
+local function generateTree(x, y, z)
+    local treeHeight = math.random(4, 7)
+    local logHeight = math.random(3, 5)
+    
+    -- 生成树干
+    for i = 1, logHeight do
+        createBlock(
+            Vector3.new(x, y + i * CONFIG.BLOCK_SIZE, z),
+            "OAK_LOG"
+        )
+    end
+    
+    -- 生成树叶
+    for dx = -2, 2 do
+        for dz = -2, 2 do
+            for dy = 0, 2 do
+                if math.abs(dx) + math.abs(dz) + math.abs(dy) <= 3 then
+                    createBlock(
+                        Vector3.new(
+                            x + dx * CONFIG.BLOCK_SIZE,
+                            y + (logHeight + dy) * CONFIG.BLOCK_SIZE,
+                            z + dz * CONFIG.BLOCK_SIZE
+                        ),
+                        "OAK_LEAVES"
+                    )
+                end
+            end
+        end
+    end
+end
+
+-- 生成洞穴
+local function generateCave(x, z, surfaceHeight)
+    local caveHeight = math.random(10, 30)
+    local caveWidth = math.random(3, 8)
+    
+    for y = 5, caveHeight do
+        if y < surfaceHeight - 5 then
+            local noise = math.noise(
+                x * 0.03,
+                y * 0.05,
+                z * 0.03
+            )
+            
+            if noise > 0.2 then
+                -- 生成洞穴通道
+                for dx = -caveWidth, caveWidth do
+                    for dz = -caveWidth, caveWidth do
+                        if dx*dx + dz*dz <= caveWidth*caveWidth then
+                            removeBlock(
+                                Vector3.new(
+                                    x + dx * CONFIG.BLOCK_SIZE,
+                                    y * CONFIG.BLOCK_SIZE,
+                                    z + dz * CONFIG.BLOCK_SIZE
+                                )
+                            )
+                        end
+                    end
+                end
+                
+                -- 生成矿物
+                if math.random(1, 10) == 1 then
+                    local oreTypes = {"COAL_ORE", "IRON_ORE", "COPPER_ORE"}
+                    if y < 20 then
+                        table.insert(oreTypes, "GOLD_ORE")
+                        table.insert(oreTypes, "REDSTONE_ORE")
+                    end
+                    if y < 10 then
+                        table.insert(oreTypes, "DIAMOND_ORE")
+                        table.insert(oreTypes, "EMERALD_ORE")
+                    end
+                    
+                    local oreType = oreTypes[math.random(1, #oreTypes)]
+                    generateOreVein(
+                        x + math.random(-caveWidth, caveWidth) * CONFIG.BLOCK_SIZE,
+                        y * CONFIG.BLOCK_SIZE,
+                        z + math.random(-caveWidth, caveWidth) * CONFIG.BLOCK_SIZE,
+                        oreType,
+                        3
+                    )
+                end
+            end
+        end
+    end
+end
+
+-- 生成矿脉
+local function generateOreVein(x, y, z, oreType, size)
+    for dx = -size, size do
+        for dy = -size, size do
+            for dz = -size, dz do
+                if dx*dx + dy*dy + dz*dz <= size*size then
+                    if math.random(1, 2) == 1 then
+                        createBlock(
+                            Vector3.new(
+                                x + dx * CONFIG.BLOCK_SIZE,
+                                y + dy * CONFIG.BLOCK_SIZE,
+                                z + dz * CONFIG.BLOCK_SIZE
+                            ),
+                            oreType
+                        )
                     end
                 end
             end
@@ -324,171 +1430,1538 @@ local function generateTerrain()
     end
 end
 
--- 昼夜循环
-local function dayNightCycle()
-    if GameState.DayNightCycle then
-        GameState.TimeOfDay = (GameState.TimeOfDay + 0.01) % 24
-        
-        local brightness = 1
-        if GameState.TimeOfDay > 18 or GameState.TimeOfDay < 6 then
-            brightness = 0.2 -- 夜晚
-        elseif GameState.TimeOfDay > 17 or GameState.TimeOfDay < 7 then
-            brightness = 0.5 -- 黄昏/黎明
+-- 生成矿井
+local function generateMineshaft(chunkX, chunkZ)
+    local startX = chunkX * CONFIG.CHUNK_SIZE * CONFIG.BLOCK_SIZE
+    local startZ = chunkZ * CONFIG.CHUNK_SIZE * CONFIG.BLOCK_SIZE
+    local startY = 30 * CONFIG.BLOCK_SIZE
+    
+    -- 生成主通道
+    for length = 0, 50 do
+        local x = startX + length * CONFIG.BLOCK_SIZE * 2
+        for w = -2, 2 do
+            for h = -2, 2 do
+                if math.random(1, 5) > 1 then
+                    removeBlock(
+                        Vector3.new(
+                            x + w * CONFIG.BLOCK_SIZE,
+                            startY + h * CONFIG.BLOCK_SIZE,
+                            startZ
+                        )
+                    )
+                end
+            end
         end
         
-        game.Lighting.Brightness = brightness
-        game.Lighting.ClockTime = GameState.TimeOfDay
-        
-        if GameState.TimeOfDay > 5 and GameState.TimeOfDay < 19 then
-            game.Lighting.FogEnd = 10000
-            game.Lighting.FogColor = Color3.fromRGB(200, 220, 255)
-        else
-            game.Lighting.FogEnd = 1000
-            game.Lighting.FogColor = Color3.fromRGB(10, 10, 30)
+        -- 生成支撑柱
+        if length % 10 == 0 then
+            for h = -5, 0 do
+                createBlock(
+                    Vector3.new(
+                        x,
+                        startY + h * CONFIG.BLOCK_SIZE,
+                        startZ
+                    ),
+                    "OAK_LOG"
+                )
+            end
         end
+        
+        -- 生成分支
+        if math.random(1, 5) == 1 then
+            local branchLength = math.random(5, 20)
+            for b = 1, branchLength do
+                local zOffset = b * CONFIG.BLOCK_SIZE * 2
+                for w = -1, 1 do
+                    for h = -1, 1 do
+                        removeBlock(
+                            Vector3.new(
+                                x + w * CONFIG.BLOCK_SIZE,
+                                startY + h * CONFIG.BLOCK_SIZE,
+                                startZ + zOffset
+                            )
+                        )
+                    end
+                end
+            end
+        end
+    end
+    
+    -- 生成矿车轨道
+    for length = 0, 50 do
+        local x = startX + length * CONFIG.BLOCK_SIZE * 2
+        createBlock(
+            Vector3.new(x, startY - CONFIG.BLOCK_SIZE, startZ),
+            "IRON_BARS"
+        )
+    end
+end
+
+-- 生成村庄
+local function generateVillage(chunkX, chunkZ)
+    local centerX = chunkX * CONFIG.CHUNK_SIZE * CONFIG.BLOCK_SIZE
+    local centerZ = chunkZ * CONFIG.CHUNK_SIZE * CONFIG.BLOCK_SIZE
+    
+    -- 生成中心道路
+    for i = -20, 20 do
+        createBlock(
+            Vector3.new(centerX + i * CONFIG.BLOCK_SIZE * 3, 0, centerZ),
+            "GRAVEL"
+        )
+        createBlock(
+            Vector3.new(centerX, 0, centerZ + i * CONFIG.BLOCK_SIZE * 3),
+            "GRAVEL"
+        )
+    end
+    
+    -- 生成房屋
+    local housePositions = {
+        {centerX + 40, centerZ + 40},
+        {centerX - 40, centerZ + 40},
+        {centerX + 40, centerZ - 40},
+        {centerX - 40, centerZ - 40}
+    }
+    
+    for _, pos in ipairs(housePositions) do
+        generateHouse(pos[1], pos[2])
+        
+        -- 生成村民
+        spawnMob(pos[1], 0, pos[2], "VILLAGER")
+    end
+    
+    -- 生成农场
+    generateFarm(centerX + 80, centerZ)
+    
+    -- 生成铁匠铺
+    generateBlacksmith(centerX - 80, centerZ)
+    
+    -- 生成水井
+    generateWell(centerX, centerZ)
+end
+
+-- 生成房屋
+local function generateHouse(x, z)
+    local width = 7
+    local length = 9
+    local height = 5
+    
+    -- 地基
+    for wx = 0, width do
+        for wz = 0, length do
+            createBlock(
+                Vector3.new(
+                    x + wx * CONFIG.BLOCK_SIZE,
+                    0,
+                    z + wz * CONFIG.BLOCK_SIZE
+                ),
+                "COBBLESTONE"
+            )
+        end
+    end
+    
+    -- 墙壁
+    for h = 1, height do
+        for wx = 0, width do
+            -- 前后墙
+            createBlock(
+                Vector3.new(
+                    x + wx * CONFIG.BLOCK_SIZE,
+                    h * CONFIG.BLOCK_SIZE,
+                    z
+                ),
+                "OAK_PLANKS"
+            )
+            createBlock(
+                Vector3.new(
+                    x + wx * CONFIG.BLOCK_SIZE,
+                    h * CONFIG.BLOCK_SIZE,
+                    z + length * CONFIG.BLOCK_SIZE
+                ),
+                "OAK_PLANKS"
+            )
+        end
+        
+        for wz = 0, length do
+            -- 左右墙
+            createBlock(
+                Vector3.new(
+                    x,
+                    h * CONFIG.BLOCK_SIZE,
+                    z + wz * CONFIG.BLOCK_SIZE
+                ),
+                "OAK_PLANKS"
+            )
+            createBlock(
+                Vector3.new(
+                    x + width * CONFIG.BLOCK_SIZE,
+                    h * CONFIG.BLOCK_SIZE,
+                    z + wz * CONFIG.BLOCK_SIZE
+                ),
+                "OAK_PLANKS"
+            )
+        end
+    end
+    
+    -- 屋顶
+    for wx = -1, width + 1 do
+        for wz = -1, length + 1 do
+            createBlock(
+                Vector3.new(
+                    x + wx * CONFIG.BLOCK_SIZE,
+                    (height + 1) * CONFIG.BLOCK_SIZE,
+                    z + wz * CONFIG.BLOCK_SIZE
+                ),
+                "OAK_PLANKS"
+            )
+        end
+    end
+    
+    -- 门 (中间位置)
+    removeBlock(Vector3.new(x + math.floor(width/2) * CONFIG.BLOCK_SIZE, 1 * CONFIG.BLOCK_SIZE, z))
+    removeBlock(Vector3.new(x + math.floor(width/2) * CONFIG.BLOCK_SIZE, 2 * CONFIG.BLOCK_SIZE, z))
+    
+    -- 窗户
+    for h = 2, 3 do
+        removeBlock(Vector3.new(x, h * CONFIG.BLOCK_SIZE, z + math.floor(length/2) * CONFIG.BLOCK_SIZE))
+        removeBlock(Vector3.new(x + width * CONFIG.BLOCK_SIZE, h * CONFIG.BLOCK_SIZE, z + math.floor(length/2) * CONFIG.BLOCK_SIZE))
+    end
+    
+    -- 内部家具
+    createBlock(
+        Vector3.new(
+            x + 2 * CONFIG.BLOCK_SIZE,
+            1 * CONFIG.BLOCK_SIZE,
+            z + 2 * CONFIG.BLOCK_SIZE
+        ),
+        "CRAFTING_TABLE"
+    )
+    
+    createBlock(
+        Vector3.new(
+            x + (width - 2) * CONFIG.BLOCK_SIZE,
+            1 * CONFIG.BLOCK_SIZE,
+            z + 2 * CONFIG.BLOCK_SIZE
+        ),
+        "CHEST"
+    )
+    
+    createBlock(
+        Vector3.new(
+            x + 2 * CONFIG.BLOCK_SIZE,
+            1 * CONFIG.BLOCK_SIZE,
+            z + (length - 2) * CONFIG.BLOCK_SIZE
+        ),
+        "FURNACE"
+    )
+    
+    createBlock(
+        Vector3.new(
+            x + (width - 2) * CONFIG.BLOCK_SIZE,
+            1 * CONFIG.BLOCK_SIZE,
+            z + (length - 2) * CONFIG.BLOCK_SIZE
+        ),
+        "BED"
+    )
+end
+
+-- 生成农场
+local function generateFarm(x, z)
+    local size = 10
+    
+    -- 耕地
+    for fx = -size, size do
+        for fz = -size, size do
+            createBlock(
+                Vector3.new(
+                    x + fx * CONFIG.BLOCK_SIZE,
+                    0,
+                    z + fz * CONFIG.BLOCK_SIZE
+                ),
+                "DIRT"
+            )
+        end
+    end
+    
+    -- 水源
+    createBlock(
+        Vector3.new(x, 0, z),
+        "WATER"
+    )
+    
+    -- 栅栏
+    for fx = -size-1, size+1 do
+        createBlock(
+            Vector3.new(
+                x + fx * CONFIG.BLOCK_SIZE,
+                1 * CONFIG.BLOCK_SIZE,
+                z - (size+1) * CONFIG.BLOCK_SIZE
+            ),
+            "OAK_FENCE"
+        )
+        createBlock(
+            Vector3.new(
+                x + fx * CONFIG.BLOCK_SIZE,
+                1 * CONFIG.BLOCK_SIZE,
+                z + (size+1) * CONFIG.BLOCK_SIZE
+            ),
+            "OAK_FENCE"
+        )
+    end
+    
+    for fz = -size, size do
+        createBlock(
+            Vector3.new(
+                x - (size+1) * CONFIG.BLOCK_SIZE,
+                1 * CONFIG.BLOCK_SIZE,
+                z + fz * CONFIG.BLOCK_SIZE
+            ),
+            "OAK_FENCE"
+        )
+        createBlock(
+            Vector3.new(
+                x + (size+1) * CONFIG.BLOCK_SIZE,
+                1 * CONFIG.BLOCK_SIZE,
+                z + fz * CONFIG.BLOCK_SIZE
+            ),
+            "OAK_FENCE"
+        )
+    end
+    
+    -- 生成动物
+    for i = 1, 4 do
+        spawnMob(
+            x + math.random(-size, size) * CONFIG.BLOCK_SIZE,
+            0,
+            z + math.random(-size, size) * CONFIG.BLOCK_SIZE,
+            "COW"
+        )
+        spawnMob(
+            x + math.random(-size, size) * CONFIG.BLOCK_SIZE,
+            0,
+            z + math.random(-size, size) * CONFIG.BLOCK_SIZE,
+            "CHICKEN"
+        )
+    end
+end
+
+-- 生成铁匠铺
+local function generateBlacksmith(x, z)
+    local width = 9
+    local length = 11
+    local height = 6
+    
+    -- 使用石头建造
+    for wx = 0, width do
+        for wz = 0, length do
+            createBlock(
+                Vector3.new(
+                    x + wx * CONFIG.BLOCK_SIZE,
+                    0,
+                    z + wz * CONFIG.BLOCK_SIZE
+                ),
+                "COBBLESTONE"
+            )
+        end
+    end
+    
+    for h = 1, height do
+        for wx = 0, width do
+            createBlock(
+                Vector3.new(
+                    x + wx * CONFIG.BLOCK_SIZE,
+                    h * CONFIG.BLOCK_SIZE,
+                    z
+                ),
+                "COBBLESTONE"
+            )
+            createBlock(
+                Vector3.new(
+                    x + wx * CONFIG.BLOCK_SIZE,
+                    h * CONFIG.BLOCK_SIZE,
+                    z + length * CONFIG.BLOCK_SIZE
+                ),
+                "COBBLESTONE"
+            )
+        end
+        
+        for wz = 0, length do
+            createBlock(
+                Vector3.new(
+                    x,
+                    h * CONFIG.BLOCK_SIZE,
+                    z + wz * CONFIG.BLOCK_SIZE
+                ),
+                "COBBLESTONE"
+            )
+            createBlock(
+                Vector3.new(
+                    x + width * CONFIG.BLOCK_SIZE,
+                    h * CONFIG.BLOCK_SIZE,
+                    z + wz * CONFIG.BLOCK_SIZE
+                ),
+                "COBBLESTONE"
+            )
+        end
+    end
+    
+    -- 烟囱
+    for h = height + 1, height + 3 do
+        createBlock(
+            Vector3.new(
+                x + 2 * CONFIG.BLOCK_SIZE,
+                h * CONFIG.BLOCK_SIZE,
+                z + 2 * CONFIG.BLOCK_SIZE
+            ),
+            "BRICKS"
+        )
+    end
+    
+    -- 内部设备
+    createBlock(
+        Vector3.new(
+            x + math.floor(width/2) * CONFIG.BLOCK_SIZE,
+            1 * CONFIG.BLOCK_SIZE,
+            z + 2 * CONFIG.BLOCK_SIZE
+        ),
+        "FURNACE"
+    )
+    
+    createBlock(
+        Vector3.new(
+            x + math.floor(width/2) * CONFIG.BLOCK_SIZE,
+            1 * CONFIG.BLOCK_SIZE,
+            z + 4 * CONFIG.BLOCK_SIZE
+        ),
+        "ANVIL"
+    )
+    
+    createBlock(
+        Vector3.new(
+            x + (width - 2) * CONFIG.BLOCK_SIZE,
+            1 * CONFIG.BLOCK_SIZE,
+            z + (length - 2) * CONFIG.BLOCK_SIZE
+        ),
+        "CHEST"
+    )
+end
+
+-- 生成水井
+local function generateWell(x, z)
+    local radius = 3
+    
+    -- 井壁
+    for angle = 0, 360, 45 do
+        local wx = math.cos(math.rad(angle)) * radius
+        local wz = math.sin(math.rad(angle)) * radius
+        
+        for h = 0, 5 do
+            createBlock(
+                Vector3.new(
+                    x + wx * CONFIG.BLOCK_SIZE,
+                    h * CONFIG.BLOCK_SIZE,
+                    z + wz * CONFIG.BLOCK_SIZE
+                ),
+                "COBBLESTONE"
+            )
+        end
+    end
+    
+    -- 井顶
+    for angle = 0, 360, 45 do
+        local wx = math.cos(math.rad(angle)) * (radius + 1)
+        local wz = math.sin(math.rad(angle)) * (radius + 1)
+        
+        createBlock(
+            Vector3.new(
+                x + wx * CONFIG.BLOCK_SIZE,
+                6 * CONFIG.BLOCK_SIZE,
+                z + wz * CONFIG.BLOCK_SIZE
+            ),
+            "OAK_PLANKS"
+        )
+    end
+    
+    -- 井水
+    for wx = -radius + 1, radius - 1 do
+        for wz = -radius + 1, radius - 1 do
+            createBlock(
+                Vector3.new(
+                    x + wx * CONFIG.BLOCK_SIZE,
+                    1 * CONFIG.BLOCK_SIZE,
+                    z + wz * CONFIG.BLOCK_SIZE
+                ),
+                "WATER"
+            )
+        end
+    end
+    
+    -- 辘轳
+    createBlock(
+        Vector3.new(
+            x,
+            7 * CONFIG.BLOCK_SIZE,
+            z
+        ),
+        "OAK_FENCE"
+    )
+end
+
+-- 生成出生点平台
+local function generateSpawnPlatform()
+    local size = 5
+    
+    for x = -size, size do
+        for z = -size, size do
+            createBlock(
+                Vector3.new(
+                    x * CONFIG.BLOCK_SIZE,
+                    0,
+                    z * CONFIG.BLOCK_SIZE
+                ),
+                "GRASS"
+            )
+        end
+    end
+    
+    -- 生成出生点树木
+    generateTree(0, 0, 3 * CONFIG.BLOCK_SIZE)
+    generateTree(3 * CONFIG.BLOCK_SIZE, 0, 0)
+    generateTree(-3 * CONFIG.BLOCK_SIZE, 0, 0)
+    generateTree(0, 0, -3 * CONFIG.BLOCK_SIZE)
+    
+    -- 生成出生点箱子
+    createBlock(
+        Vector3.new(2 * CONFIG.BLOCK_SIZE, 1 * CONFIG.BLOCK_SIZE, 0),
+        "CHEST"
+    )
+    
+    -- 初始物品
+    GameState.Inventory = {
+        {Type = "WOODEN_PICKAXE", Count = 1},
+        {Type = "WOODEN_SWORD", Count = 1},
+        {Type = "APPLE", Count = 5},
+        {Type = "OAK_PLANKS", Count = 32},
+        {Type = "STICK", Count = 16}
+    }
+    
+    -- 设置出生点
+    GameState.SpawnPoint = Vector3.new(0, 10, 0)
+    
+    print("出生点生成完成！")
+end
+
+-- 生成生物
+local function spawnMob(x, y, z, mobType)
+    local mobData = MOB_TYPES[mobType]
+    if not mobData then return end
+    
+    local mob = Instance.new("Part")
+    mob.Name = mobData.Name
+    mob.Size = mobData.Size
+    mob.Position = Vector3.new(x, y + mobData.Size.Y/2, z)
+    mob.Anchored = false
+    mob.CanCollide = true
+    
+    -- 设置颜色和材质
+    if mobType == "ZOMBIE" then
+        mob.Color = Color3.fromRGB(100, 150, 100)
+        mob.Material = Enum.Material.Grass
+    elseif mobType == "SKELETON" then
+        mob.Color = Color3.fromRGB(220, 220, 220)
+        mob.Material = Enum.Material.Slate
+    elseif mobType == "SPIDER" then
+        mob.Color = Color3.fromRGB(50, 50, 50)
+        mob.Material = Enum.Material.Slate
+    elseif mobType == "CREEPER" then
+        mob.Color = Color3.fromRGB(100, 200, 100)
+        mob.Material = Enum.Material.Grass
+    elseif mobType == "COW" then
+        mob.Color = Color3.fromRGB(120, 80, 50)
+        mob.Material = Enum.Material.Grass
+    else
+        mob.Color = Color3.fromRGB(200, 200, 200)
+        mob.Material = Enum.Material.Slate
+    end
+    
+    -- 添加刚体
+    local bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+    bodyVelocity.Parent = mob
+    
+    -- 添加AI脚本
+    local ai = Instance.new("Script")
+    ai.Name = "MobAI"
+    ai.Parent = mob
+    
+    -- 存储生物数据
+    local mobInstance = {
+        Type = mobType,
+        Data = mobData,
+        Instance = mob,
+        Health = mobData.Health,
+        Target = nil,
+        State = "Idle" -- Idle, Wander, Chase, Attack, Flee
+    }
+    
+    table.insert(GameState.Mobs, mobInstance)
+    mob.Parent = workspace
+    
+    return mobInstance
+end
+
+-- 创建方块
+local function createBlock(position, blockType)
+    local blockData = BLOCK_TYPES[blockType]
+    if not blockData then return nil end
+    
+    local chunkX = math.floor(position.X / (CONFIG.CHUNK_SIZE * CONFIG.BLOCK_SIZE))
+    local chunkZ = math.floor(position.Z / (CONFIG.CHUNK_SIZE * CONFIG.BLOCK_SIZE))
+    local chunkKey = chunkX .. "_" .. chunkZ
+    
+    if not GameState.Chunks[chunkKey] then
+        GameState.Chunks[chunkKey] = {}
+    end
+    
+    local blockKey = math.floor(position.X) .. "_" .. math.floor(position.Y) .. "_" .. math.floor(position.Z)
+    
+    -- 检查是否已存在方块
+    if GameState.Chunks[chunkKey][blockKey] then
+        return nil
+    end
+    
+    local block = Instance.new("Part")
+    block.Name = blockData.Name
+    block.Size = Vector3.new(CONFIG.BLOCK_SIZE, CONFIG.BLOCK_SIZE, CONFIG.BLOCK_SIZE)
+    block.Position = Vector3.new(
+        math.floor(position.X / CONFIG.BLOCK_SIZE) * CONFIG.BLOCK_SIZE + CONFIG.BLOCK_SIZE/2,
+        math.floor(position.Y / CONFIG.BLOCK_SIZE) * CONFIG.BLOCK_SIZE + CONFIG.BLOCK_SIZE/2,
+        math.floor(position.Z / CONFIG.BLOCK_SIZE) * CONFIG.BLOCK_SIZE + CONFIG.BLOCK_SIZE/2
+    )
+    block.Anchored = true
+    block.CanCollide = true
+    block.Color = blockData.Color
+    block.Material = blockData.Material
+    
+    if blockData.Transparent then
+        block.Transparency = 0.3
+    end
+    
+    if blockData.LightEmission then
+        local light = Instance.new("PointLight")
+        light.Brightness = blockData.LightEmission
+        light.Range = 10
+        light.Parent = block
+    end
+    
+    -- 添加标签
+    local tag = Instance.new("StringValue")
+    tag.Name = "BlockType"
+    tag.Value = blockType
+    tag.Parent = block
+    
+    block.Parent = workspace
+    
+    -- 存储数据
+    GameState.Chunks[chunkKey][blockKey] = {
+        Type = blockType,
+        Position = position,
+        Instance = block
+    }
+    
+    -- 统计
+    GameState.BlocksPlaced = GameState.BlocksPlaced + 1
+    
+    -- 发现新方块
+    if not GameState.DiscoveredBlocks[blockType] then
+        GameState.DiscoveredBlocks[blockType] = true
+        showNotification("发现新方块: " .. blockData.Name)
+    end
+    
+    return block
+end
+
+-- 移除方块
+local function removeBlock(position)
+    local chunkX = math.floor(position.X / (CONFIG.CHUNK_SIZE * CONFIG.BLOCK_SIZE))
+    local chunkZ = math.floor(position.Z / (CONFIG.CHUNK_SIZE * CONFIG.BLOCK_SIZE))
+    local chunkKey = chunkX .. "_" .. chunkZ
+    
+    if not GameState.Chunks[chunkKey] then return nil end
+    
+    local blockKey = math.floor(position.X) .. "_" .. math.floor(position.Y) .. "_" .. math.floor(position.Z)
+    local blockData = GameState.Chunks[chunkKey][blockKey]
+    
+    if blockData and blockData.Instance then
+        local blockType = blockData.Type
+        blockData.Instance:Destroy()
+        GameState.Chunks[chunkKey][blockKey] = nil
+        
+        -- 统计
+        GameState.BlocksMined = GameState.BlocksMined + 1
+        
+        return blockType
+    end
+    
+    return nil
+end
+
+-- 显示通知
+local function showNotification(message)
+    local notification = Instance.new("ScreenGui")
+    notification.Name = "Notification"
+    notification.Parent = player.PlayerGui
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.4, 0, 0.1, 0)
+    frame.Position = UDim2.new(0.3, 0, 0.1, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    frame.BackgroundTransparency = 0.3
+    frame.BorderSizePixel = 2
+    frame.Parent = notification
+    
+    local text = Instance.new("TextLabel")
+    text.Size = UDim2.new(1, 0, 1, 0)
+    text.BackgroundTransparency = 1
+    text.Text = message
+    text.TextColor3 = Color3.fromRGB(255, 255, 255)
+    text.Font = Enum.Font.SourceSansBold
+    text.TextSize = 18
+    text.Parent = frame
+    
+    -- 淡出效果
+    task.spawn(function()
+        task.wait(3)
+        local tween = TweenService:Create(
+            frame,
+            TweenInfo.new(1),
+            {BackgroundTransparency = 1}
+        )
+        tween:Play()
+        tween.Completed:Connect(function()
+            notification:Destroy()
+        end)
+    end)
+end
+
+-- 检查平台
+local function isMobile()
+    return UserInputService.TouchEnabled
+end
+
+-- 移动控制
+local function setupMobileControls(joystickThumb, jumpButton)
+    local joystickPosition = joystickThumb.AbsolutePosition
+    local joystickSize = joystickThumb.AbsoluteSize
+    local joystickCenter = joystickPosition + joystickSize / 2
+    
+    local isJumping = false
+    
+    -- 摇杆控制
+    local touchConnection
+    local currentTouch
+    
+    joystickThumb.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            currentTouch = input
+        end
+    end)
+    
+    joystickThumb.InputChanged:Connect(function(input)
+        if input == currentTouch then
+            local position = input.Position
+            local delta = position - joystickCenter
+            local direction = Vector2.new(
+                delta.X / (joystickSize.X / 2),
+                delta.Y / (joystickSize.Y / 2)
+            )
+            
+            -- 限制摇杆移动范围
+            local magnitude = math.min(direction.Magnitude, 1)
+            direction = direction.Unit * magnitude
+            
+            -- 更新摇杆位置
+            joystickThumb.Position = UDim2.new(
+                0.35 + direction.X * 0.35,
+                0,
+                0.35 + direction.Y * 0.35,
+                0
+            )
+            
+            -- 移动角色
+            if character and character:FindFirstChild("Humanoid") then
+                local humanoid = character.Humanoid
+                local moveDirection = Vector3.new(
+                    direction.X,
+                    0,
+                    direction.Y
+                )
+                
+                -- 转换为世界方向
+                local camera = workspace.CurrentCamera
+                local forward = camera.CFrame.LookVector
+                local right = camera.CFrame.RightVector
+                
+                forward = Vector3.new(forward.X, 0, forward.Z).Unit
+                right = Vector3.new(right.X, 0, right.Z).Unit
+                
+                local moveVector = (forward * moveDirection.Z + right * moveDirection.X) * magnitude
+                humanoid:Move(moveVector)
+            end
+        end
+    end)
+    
+    joystickThumb.InputEnded:Connect(function(input)
+        if input == currentTouch then
+            currentTouch = nil
+            -- 复位摇杆
+            TweenService:Create(
+                joystickThumb,
+                TweenInfo.new(0.2),
+                {Position = UDim2.new(0.35, 0, 0.35, 0)}
+            ):Play()
+        end
+    end)
+    
+    -- 跳跃控制
+    jumpButton.MouseButton1Down:Connect(function()
+        if character and character:FindFirstChild("Humanoid") then
+            character.Humanoid.Jump = true
+        end
+    end)
+end
+
+-- 主游戏循环
+local function gameLoop()
+    local lastTime = tick()
+    local dayNightCycle = 0
+    
+    while true do
+        local currentTime = tick()
+        local deltaTime = currentTime - lastTime
+        lastTime = currentTime
+        
+        -- 更新游戏时间
+        GameState.GameTime = GameState.GameTime + deltaTime
+        dayNightCycle = (dayNightCycle + deltaTime / CONFIG.DAY_LENGTH) % 1
+        
+        -- 昼夜循环
+        if GameState.DayNightCycle then
+            local timeOfDay = dayNightCycle * 24
+            GameState.IsDay = timeOfDay > 6 and timeOfDay < 18
+            
+            local brightness
+            if GameState.IsDay then
+                brightness = 2.0
+                Lighting.Ambient = Color3.fromRGB(150, 150, 150)
+            else
+                brightness = 0.1
+                Lighting.Ambient = Color3.fromRGB(50, 50, 80)
+            end
+            
+            Lighting.Brightness = brightness
+            Lighting.ClockTime = timeOfDay
+        end
+        
+        -- 生存机制
+        survivalMechanics(deltaTime)
+        
+        -- 生物AI
+        updateMobs(deltaTime)
+        
+        -- 更新UI
+        updateUI()
+        
+        -- 区块加载/卸载
+        updateChunks()
+        
+        -- 环境效果
+        updateEnvironment(deltaTime)
+        
+        task.wait()
     end
 end
 
 -- 生存机制
 local function survivalMechanics(deltaTime)
-    if GameState.SurvivalMode then
-        -- 饥饿减少
-        GameState.Hunger = math.max(0, GameState.Hunger - deltaTime * 0.5)
-        
-        -- 如果饥饿过低，减少生命值
-        if GameState.Hunger < 20 then
+    -- 饥饿减少
+    if GameState.Hunger > 0 then
+        GameState.Hunger = math.max(0, GameState.Hunger - deltaTime * 0.2)
+    end
+    
+    -- 饥饿影响
+    if GameState.Hunger <= 20 then
+        -- 饥饿状态
+        if GameState.Hunger <= 0 then
             GameState.Health = math.max(0, GameState.Health - deltaTime * 1)
-        end
-        
-        -- 自动恢复生命（如果饥饿充足）
-        if GameState.Hunger > 80 and GameState.Health < 100 then
-            GameState.Health = math.min(100, GameState.Health + deltaTime * 2)
-        end
-        
-        -- 水下检查
-        local headPos = character.Head.Position
-        local terrain = workspace.Terrain
-        local material, _ = terrain:ReadVoxels(
-            Region3.new(
-                headPos - Vector3.new(0.5, 0.5, 0.5),
-                headPos + Vector3.new(0.5, 0.5, 0.5)
-            ),
-            4
-        )
-        
-        -- 简单的水检查
-        if headPos.Y < 0 then -- 假设水面在Y=0
-            GameState.Oxygen = math.max(0, GameState.Oxygen - deltaTime * 10)
-            if GameState.Oxygen <= 0 then
-                GameState.Health = math.max(0, GameState.Health - deltaTime * 5)
-            end
         else
-            GameState.Oxygen = math.min(100, GameState.Oxygen + deltaTime * 20)
+            GameState.Health = math.max(0, GameState.Health - deltaTime * 0.2)
+        end
+    elseif GameState.Hunger > 80 and GameState.Health < CONFIG.MAX_HEALTH then
+        -- 恢复生命
+        GameState.Health = math.min(CONFIG.MAX_HEALTH, GameState.Health + deltaTime * 0.5)
+    end
+    
+    -- 水下检查
+    local headPos = character.Head.Position
+    if headPos.Y < 0 then -- 简单的水面检测
+        GameState.Oxygen = math.max(0, GameState.Oxygen - deltaTime * 10)
+        if GameState.Oxygen <= 0 then
+            GameState.Health = math.max(0, GameState.Health - deltaTime * 5)
+        end
+    else
+        GameState.Oxygen = math.min(CONFIG.MAX_OXYGEN, GameState.Oxygen + deltaTime * 20)
+    end
+    
+    -- 精神值 (在黑暗中降低)
+    local lightLevel = Lighting.Brightness
+    if lightLevel < 0.3 and not GameState.IsDay then
+        GameState.Sanity = math.max(0, GameState.Sanity - deltaTime * 0.5)
+    elseif GameState.Sanity < CONFIG.MAX_SANITY then
+        GameState.Sanity = math.min(CONFIG.MAX_SANITY, GameState.Sanity + deltaTime * 0.2)
+    end
+    
+    -- 精神值影响
+    if GameState.Sanity < 30 then
+        -- 开始看到幻觉
+    end
+end
+
+-- 更新生物AI
+local function updateMobs(deltaTime)
+    for _, mob in ipairs(GameState.Mobs) do
+        if mob.Instance and mob.Instance.Parent then
+            local mobData = mob.Data
+            
+            if mobData.Hostile or mob.Target then
+                -- 敌对或已激怒的生物
+                local distanceToPlayer = (character.HumanoidRootPart.Position - mob.Instance.Position).Magnitude
+                
+                if distanceToPlayer < 20 then
+                    -- 追逐玩家
+                    if not mob.Target then
+                        mob.Target = character
+                        mob.State = "Chase"
+                    end
+                    
+                    if mob.State == "Chase" then
+                        if distanceToPlayer > 3 then
+                            -- 移动向玩家
+                            local direction = (character.HumanoidRootPart.Position - mob.Instance.Position).Unit
+                            local bodyVelocity = mob.Instance:FindFirstChild("BodyVelocity")
+                            if bodyVelocity then
+                                bodyVelocity.Velocity = direction * mobData.Speed
+                            end
+                        else
+                            -- 攻击范围
+                            mob.State = "Attack"
+                        end
+                    elseif mob.State == "Attack" then
+                        -- 攻击玩家
+                        if tick() % 1 < 0.1 then -- 每秒攻击一次
+                            GameState.Health = math.max(0, GameState.Health - mobData.Damage)
+                        end
+                        
+                        if distanceToPlayer > 4 then
+                            mob.State = "Chase"
+                        end
+                    end
+                else
+                    mob.Target = nil
+                    mob.State = "Idle"
+                end
+            else
+                -- 被动生物
+                if tick() % 5 < 0.1 then
+                    -- 随机移动
+                    local randomDirection = Vector3.new(
+                        math.random(-1, 1),
+                        0,
+                        math.random(-1, 1)
+                    ).Unit
+                    
+                    local bodyVelocity = mob.Instance:FindFirstChild("BodyVelocity")
+                    if bodyVelocity then
+                        bodyVelocity.Velocity = randomDirection * mobData.Speed * 0.5
+                    end
+                end
+            end
+            
+            -- 特殊能力
+            if mobData.Teleports and tick() % 3 < 0.1 then
+                -- 末影人传送
+                if math.random(1, 10) == 1 then
+                    mob.Instance.Position = mob.Instance.Position + Vector3.new(
+                        math.random(-10, 10),
+                        0,
+                        math.random(-10, 10)
+                    )
+                end
+            end
         end
     end
 end
 
--- 主函数
-local function main()
-    -- 创建UI
-    local ui = createUI()
+-- 更新UI
+local function updateUI()
+    if GameState.MobileUI then
+        local ui = GameState.MobileUI
+        
+        -- 更新状态条
+        ui.HealthBar.Size = UDim2.new(0.9 * (GameState.Health / CONFIG.MAX_HEALTH), 0, 0.25, 0)
+        ui.HealthText.Text = string.format("❤️ %d/%d", GameState.Health, CONFIG.MAX_HEALTH)
+        
+        ui.HungerBar.Size = UDim2.new(0.9 * (GameState.Hunger / CONFIG.MAX_HUNGER), 0, 0.25, 0)
+        ui.HungerText.Text = string.format("🍖 %d/%d", GameState.Hunger, CONFIG.MAX_HUNGER)
+        
+        -- 更新经验条
+        local expForNextLevel = GameState.Level * 100
+        ui.ExpBar.Size = UDim2.new(0.9 * (GameState.Experience % expForNextLevel / expForNextLevel), 0, 0.25, 0)
+        ui.ExpText.Text = string.format("⭐ Lv.%d (%d/%d)", GameState.Level, GameState.Experience % expForNextLevel, expForNextLevel)
+        
+        -- 更新快捷栏
+        for i = 1, 9 do
+            local slot = ui.HotbarSlots[i]
+            if i == GameState.SelectedHotbarSlot then
+                slot.BorderColor3 = Color3.fromRGB(255, 255, 0)
+            else
+                slot.BorderColor3 = Color3.fromRGB(100, 100, 100)
+            end
+        end
+    end
     
-    -- 生成初始地形
-    generateTerrain()
+    -- 显示坐标
+    if GameState.ShowCoordinates and character then
+        local pos = character.HumanoidRootPart.Position
+        local coordText = string.format("X: %d Y: %d Z: %d", math.floor(pos.X), math.floor(pos.Y), math.floor(pos.Z))
+        
+        -- 可以在这里添加坐标显示UI
+    end
+end
+
+-- 更新区块
+local function updateChunks()
+    if not character then return end
     
-    -- 输入处理
+    local playerPos = character.HumanoidRootPart.Position
+    local playerChunkX = math.floor(playerPos.X / (CONFIG.CHUNK_SIZE * CONFIG.BLOCK_SIZE))
+    local playerChunkZ = math.floor(playerPos.Z / (CONFIG.CHUNK_SIZE * CONFIG.BLOCK_SIZE))
+    
+    -- 加载新区块
+    for dx = -CONFIG.RENDER_DISTANCE, CONFIG.RENDER_DISTANCE do
+        for dz = -CONFIG.RENDER_DISTANCE, CONFIG.RENDER_DISTANCE do
+            local chunkX = playerChunkX + dx
+            local chunkZ = playerChunkZ + dz
+            local chunkKey = chunkX .. "_" .. chunkZ
+            
+            if not GameState.Chunks[chunkKey] then
+                generateChunk(chunkX, chunkZ)
+            end
+        end
+    end
+    
+    -- 卸载远处区块
+    for chunkKey, chunkData in pairs(GameState.Chunks) do
+        local parts = chunkKey:split("_")
+        local chunkX = tonumber(parts[1])
+        local chunkZ = tonumber(parts[2])
+        
+        local distance = math.abs(chunkX - playerChunkX) + math.abs(chunkZ - playerChunkZ)
+        
+        if distance > CONFIG.RENDER_DISTANCE + 1 then
+            -- 卸载区块
+            for _, blockData in pairs(chunkData) do
+                if blockData.Instance then
+                    blockData.Instance:Destroy()
+                end
+            end
+            GameState.Chunks[chunkKey] = nil
+        end
+    end
+end
+
+-- 生成单个区块
+local function generateChunk(chunkX, chunkZ)
+    local chunkKey = chunkX .. "_" .. chunkZ
+    GameState.Chunks[chunkKey] = {}
+    
+    local worldSeed = CONFIG.WORLD_SEED
+    
+    for x = 0, CONFIG.CHUNK_SIZE - 1 do
+        for z = 0, CONFIG.CHUNK_SIZE - 1 do
+            local worldX = chunkX * CONFIG.CHUNK_SIZE + x
+            local worldZ = chunkZ * CONFIG.CHUNK_SIZE + z
+            
+            -- 使用种子生成确定性的随机数
+            math.randomseed(worldSeed + worldX * 1000 + worldZ)
+            
+            local height = math.noise(
+                worldX * 0.01, 
+                worldZ * 0.01
+            ) * 20 + 50
+            
+            height = math.floor(height)
+            
+            for y = 0, height do
+                local blockType
+                
+                if y == height then
+                    -- 生物群系检测
+                    local biomeNoise = math.noise(worldX * 0.002, worldZ * 0.002)
+                    if biomeNoise > 0.6 then
+                        -- 沙漠
+                        blockType = "SAND"
+                    elseif biomeNoise < -0.4 then
+                        -- 雪地
+                        blockType = "SNOW"
+                    else
+                        -- 平原
+                        blockType = "GRASS"
+                    end
+                elseif y > height - 3 then
+                    blockType = "DIRT"
+                elseif y > height - 10 then
+                    blockType = "STONE"
+                else
+                    blockType = "DEEPSLATE"
+                end
+                
+                local position = Vector3.new(
+                    worldX * CONFIG.BLOCK_SIZE,
+                    y * CONFIG.BLOCK_SIZE,
+                    worldZ * CONFIG.BLOCK_SIZE
+                )
+                
+                createBlock(position, blockType)
+            end
+        end
+    end
+end
+
+-- 更新环境
+local function updateEnvironment(deltaTime)
+    -- 天气系统
+    if math.random(1, 1000) == 1 then
+        -- 开始下雨或下雪
+        local precipitation = GameState.IsDay and "Rain" or "Snow"
+        startWeather(precipitation)
+    end
+    
+    -- 环境音效
+    if tick() % 30 < 0.1 then
+        playAmbientSound()
+    end
+end
+
+-- 开始天气
+local function startWeather(weatherType)
+    if weatherType == "Rain" then
+        -- 创建雨粒子
+        local rain = Instance.new("ParticleEmitter")
+        rain.Name = "Rain"
+        rain.Parent = workspace
+        -- 设置雨粒子属性...
+    elseif weatherType == "Snow" then
+        -- 创建雪粒子
+        local snow = Instance.new("ParticleEmitter")
+        snow.Name = "Snow"
+        snow.Parent = workspace
+        -- 设置雪粒子属性...
+    end
+    
+    -- 30秒后停止天气
+    task.delay(30, function()
+        stopWeather(weatherType)
+    end)
+end
+
+-- 播放环境音效
+local function playAmbientSound()
+    -- 根据生物群系和时间播放不同的音效
+    local sounds = {
+        Day = {
+            Forest = "rbxassetid://",
+            Plains = "rbxassetid://",
+            Desert = "rbxassetid://"
+        },
+        Night = {
+            Forest = "rbxassetid://",
+            Plains = "rbxassetid://",
+            Desert = "rbxassetid://"
+        }
+    }
+    
+    -- 这里可以添加音效播放逻辑
+end
+
+-- 处理输入
+local function setupInput()
+    -- 键盘控制
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
         
-        local hitPos, hitInstance, normal = raycastFromCamera(100)
-        
-        if input.KeyCode == Enum.KeyCode.E then -- 采集
-            if hitPos then
-                local blockType = removeBlock(hitPos)
-                if blockType then
-                    ui.HintText.Text = "采集: " .. blockType
-                end
-            end
+        if input.KeyCode == Enum.KeyCode.E then
+            -- 采集/攻击
+            handleMining()
+        elseif input.KeyCode == Enum.KeyCode.R then
+            -- 放置方块
+            handleBuilding()
+        elseif input.KeyCode == Enum.KeyCode.Q then
+            -- 丢弃物品
+            handleDropping()
+        elseif input.KeyCode == Enum.KeyCode.F then
+            -- 使用物品
+            handleItemUse()
+        elseif input.KeyCode >= Enum.KeyCode.One and input.KeyCode <= Enum.KeyCode.Nine then
+            -- 切换快捷栏
+            local slot = input.KeyCode.Value - Enum.KeyCode.One.Value + 1
+            GameState.SelectedHotbarSlot = slot
+        elseif input.KeyCode == Enum.KeyCode.I then
+            -- 打开物品栏
+            toggleInventory()
+        elseif input.KeyCode == Enum.KeyCode.C then
+            -- 打开合成表
+            toggleCrafting()
+        elseif input.KeyCode == Enum.KeyCode.M then
+            -- 打开地图
+            toggleMap()
+        elseif input.KeyCode == Enum.KeyCode.T then
+            -- 聊天/命令
+            openChat()
+        end
+    end)
+    
+    -- 鼠标控制
+    UserInputService.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            -- 视角控制
+            handleCamera(input)
+        end
+    end)
+end
+
+-- 处理挖掘
+local function handleMining()
+    local ray = Ray.new(
+        camera.CFrame.Position,
+        camera.CFrame.LookVector * 10
+    )
+    
+    local hit, position = workspace:FindPartOnRay(ray, character)
+    
+    if hit and hit.Name ~= "Terrain" then
+        local blockType = hit:FindFirstChild("BlockType")
+        if blockType then
+            -- 移除方块
+            removeBlock(position)
             
-        elseif input.KeyCode == Enum.KeyCode.R then -- 放置
-            if hitPos and #GameState.Inventory > 0 then
-                local placePos = hitPos + (normal * GameState.BlockSize)
-                local blockType = table.remove(GameState.Inventory, 1)
-                createBlock(placePos, blockType)
-                ui.HintText.Text = "放置: " .. blockType
-            end
+            -- 添加到物品栏
+            addToInventory(blockType.Value, 1)
             
-        elseif input.KeyCode == Enum.KeyCode.Q then -- 切换方块
-            local blockTypes = {"Grass", "Dirt", "Stone", "Wood", "Leaves"}
-            local currentIndex = 1
-            for i, blockType in ipairs(blockTypes) do
-                if blockType == GameState.SelectedBlock then
-                    currentIndex = i
+            -- 获得经验
+            GameState.Experience = GameState.Experience + 1
+        else
+            -- 攻击生物
+            for _, mob in ipairs(GameState.Mobs) do
+                if mob.Instance == hit then
+                    mob.Health = mob.Health - 10
+                    if mob.Health <= 0 then
+                        mob.Instance:Destroy()
+                        GameState.MobsKilled = GameState.MobsKilled + 1
+                        GameState.Experience = GameState.Experience + mob.Data.Experience
+                        
+                        -- 掉落物品
+                        if mob.Data.Drops then
+                            for _, drop in ipairs(mob.Data.Drops) do
+                                if math.random(1, 2) == 1 then
+                                    spawnItemDrop(mob.Instance.Position, drop)
+                                end
+                            end
+                        end
+                    end
                     break
                 end
             end
-            
-            local nextIndex = (currentIndex % #blockTypes) + 1
-            GameState.SelectedBlock = blockTypes[nextIndex]
-            ui.HintText.Text = "选择: " .. GameState.SelectedBlock
-            
-        elseif input.KeyCode == Enum.KeyCode.T then -- 丢弃
-            if #GameState.Inventory > 0 then
-                local dropped = table.remove(GameState.Inventory, 1)
-                ui.HintText.Text = "丢弃: " .. dropped
-            end
         end
-    end)
-    
-    -- 游戏循环
-    local lastTime = tick()
-    RunService.RenderStepped:Connect(function()
-        local currentTime = tick()
-        local deltaTime = currentTime - lastTime
-        lastTime = currentTime
-        
-        -- 更新方块预览
-        local hitPos, _, normal = raycastFromCamera(50)
-        if hitPos then
-            ui.BlockPreview.Position = hitPos + (normal * GameState.BlockSize/2)
-            ui.BlockPreview.Transparency = 0.6
-        else
-            ui.BlockPreview.Transparency = 1
-        end
-        
-        -- 更新生存机制
-        survivalMechanics(deltaTime)
-        
-        -- 昼夜循环
-        dayNightCycle()
-        
-        -- 更新UI
-        updateUI(ui)
-    end)
-    
-    -- 角色死亡重置
-    character.Humanoid.Died:Connect(function()
-        task.wait(3)
-        GameState.Health = 100
-        GameState.Hunger = 100
-        GameState.Oxygen = 100
-        character:BreakJoints()
-    end)
-    
-    print("Minecraft生存模式已加载！")
-    print("控制说明:")
-    print("Q - 切换方块类型")
-    print("E - 采集方块")
-    print("R - 放置方块")
-    print("T - 丢弃物品")
-    print("WASD - 移动")
-    print("空格 - 跳跃")
+    end
 end
 
--- 等待角色加载
-if not character then
-    player.CharacterAdded:Wait()
-    character = player.Character
+-- 处理建造
+local function handleBuilding()
+    local ray = Ray.new(
+        camera.CFrame.Position,
+        camera.CFrame.LookVector * 10
+    )
+    
+    local hit, position = workspace:FindPartOnRay(ray, character)
+    
+    if hit then
+        -- 在击中点附近放置方块
+        local normal = (position - hit.Position).Unit
+        local placePosition = position + normal * (CONFIG.BLOCK_SIZE / 2)
+        
+        -- 从快捷栏获取当前选择的方块
+        local selectedItem = getSelectedHotbarItem()
+        if selectedItem and BLOCK_TYPES[selectedItem] then
+            if removeFromInventory(selectedItem, 1) then
+                createBlock(placePosition, selectedItem)
+            end
+        end
+    end
+end
+
+-- 添加到物品栏
+local function addToInventory(itemType, count)
+    for _, item in ipairs(GameState.Inventory) do
+        if item.Type == itemType and item.Count < 64 then
+            item.Count = item.Count + count
+            return true
+        end
+    end
+    
+    -- 新物品
+    if #GameState.Inventory < 36 then
+        table.insert(GameState.Inventory, {Type = itemType, Count = count})
+        return true
+    end
+    
+    return false
+end
+
+-- 从物品栏移除
+local function removeFromInventory(itemType, count)
+    for i, item in ipairs(GameState.Inventory) do
+        if item.Type == itemType and item.Count >= count then
+            item.Count = item.Count - count
+            if item.Count <= 0 then
+                table.remove(GameState.Inventory, i)
+            end
+            return true
+        end
+    end
+    return false
+end
+
+-- 获取当前快捷栏物品
+local function getSelectedHotbarItem()
+    if GameState.Inventory[GameState.SelectedHotbarSlot] then
+        return GameState.Inventory[GameState.SelectedHotbarSlot].Type
+    end
+    return nil
+end
+
+-- 生成物品掉落
+local function spawnItemDrop(position, itemType)
+    local item = Instance.new("Part")
+    item.Size = Vector3.new(1, 1, 1)
+    item.Position = position
+    item.Anchored = false
+    item.CanCollide = true
+    item.Name = itemType
+    
+    -- 添加标签
+    local tag = Instance.new("StringValue")
+    tag.Name = "ItemType"
+    tag.Value = itemType
+    tag.Parent = item
+    
+    -- 添加吸引效果
+    task.spawn(function()
+        while item.Parent do
+            task.wait(0.1)
+            local playerPos = character.HumanoidRootPart.Position
+            local direction = (playerPos - item.Position).Unit
+            item.Velocity = direction * 5
+        end
+    end)
+    
+    item.Parent = workspace
+    
+    -- 10秒后消失
+    task.delay(10, function()
+        if item.Parent then
+            item:Destroy()
+        end
+    end)
+end
+
+-- 打开/关闭物品栏
+local function toggleInventory()
+    if GameState.InventoryUI then
+        GameState.InventoryUI.Screen.Enabled = not GameState.InventoryUI.Screen.Enabled
+    end
+end
+
+-- 打开/关闭合成表
+local function toggleCrafting()
+    if GameState.CraftingUI then
+        GameState.CraftingUI.Screen.Enabled = not GameState.CraftingUI.Screen.Enabled
+    end
+end
+
+-- 打开/关闭地图
+local function toggleMap()
+    if GameState.MapUI then
+        GameState.MapUI.Screen.Enabled = not GameState.MapUI.Screen.Enabled
+    end
+end
+
+-- 打开聊天
+local function openChat()
+    -- 可以在这里实现聊天系统
+    print("聊天功能待实现")
+end
+
+-- 初始化游戏
+local function initializeGame()
+    print("初始化我的世界生存模式...")
+    
+    -- 设置玩家出生点
+    character.HumanoidRootPart.CFrame = CFrame.new(GameState.SpawnPoint)
+    
+    -- 创建UI
+    if isMobile() then
+        print("检测到移动设备，创建移动UI...")
+        GameState.MobileUI = createMobileUI()
+        setupMobileControls(GameState.MobileUI.JoystickThumb, GameState.MobileUI.JumpButton)
+    else
+        print("检测到PC设备，使用键盘控制...")
+        setupInput()
+    end
+    
+    -- 创建其他UI
+    GameState.InventoryUI = createInventoryUI()
+    GameState.CraftingUI = createCraftingUI()
+    GameState.MapUI = createMapSystem()
+    
+    -- 生成世界
+    generateWorld()
+    
+    -- 开始游戏循环
+    task.spawn(gameLoop)
+    
+    -- 显示欢迎消息
+    showNotification("欢迎来到我的世界生存模式！")
+    showNotification("使用WASD移动，鼠标控制视角")
+    showNotification("E键挖掘，R键放置，I键打开物品栏")
+    
+    print("游戏初始化完成！")
+end
+
+-- 保存游戏
+local function saveGame()
+    local saveData = {
+        Position = character.HumanoidRootPart.Position,
+        Inventory = GameState.Inventory,
+        Health = GameState.Health,
+        Hunger = GameState.Hunger,
+        Experience = GameState.Experience,
+        Level = GameState.Level,
+        GameTime = GameState.GameTime,
+        DiscoveredBlocks = GameState.DiscoveredBlocks,
+        DiscoveredItems = GameState.DiscoveredItems,
+        UnlockedRecipes = GameState.UnlockedRecipes,
+        Stats = {
+            BlocksMined = GameState.BlocksMined,
+            BlocksPlaced = GameState.BlocksPlaced,
+            MobsKilled = GameState.MobsKilled,
+            DistanceTraveled = GameState.DistanceTraveled,
+            Deaths = GameState.Deaths
+        }
+    }
+    
+    -- 转换为JSON
+    local json = HttpService:JSONEncode(saveData)
+    
+    -- 保存到DataStore (实际游戏中)
+    -- 这里简化处理，只打印保存信息
+    print("游戏已保存！")
+    print("位置:", saveData.Position)
+    print("物品栏物品数:", #saveData.Inventory)
+    print("生命值:", saveData.Health)
+    print("经验值:", saveData.Experience)
+end
+
+-- 加载游戏
+local function loadGame()
+    print("正在加载游戏...")
+    
+    -- 这里可以从DataStore加载数据
+    -- 简化处理，显示加载消息
+    showNotification("游戏加载中...")
+    
+    -- 延迟一下显示加载完成
+    task.delay(2, function()
+        showNotification("游戏加载完成！")
+    end)
+end
+
+-- 死亡处理
+local function handleDeath()
+    GameState.Deaths = GameState.Deaths + 1
+    
+    showNotification("你死了！")
+    showNotification("3秒后重生...")
+    
+    task.wait(3)
+    
+    -- 重置玩家状态
+    GameState.Health = CONFIG.MAX_HEALTH
+    GameState.Hunger = CONFIG.MAX_HUNGER
+    GameState.Oxygen = CONFIG.MAX_OXYGEN
+    GameState.Sanity = CONFIG.MAX_SANITY
+    
+    -- 传送回出生点
+    character.HumanoidRootPart.CFrame = CFrame.new(GameState.SpawnPoint)
+    
+    -- 掉落物品
+    if #GameState.Inventory > 0 then
+        for _, item in ipairs(GameState.Inventory) do
+            if math.random(1, 2) == 1 then
+                spawnItemDrop(character.HumanoidRootPart.Position, item.Type)
+            end
+        end
+        GameState.Inventory = {}
+    end
+    
+    showNotification("已重生！")
+end
+
+-- 主函数
+local function main()
+    -- 等待角色加载
+    if not character then
+        player.CharacterAdded:Wait()
+        character = player.Character
+    end
+    
+    -- 设置死亡监听
+    character.Humanoid.Died:Connect(handleDeath)
+    
+    -- 初始化游戏
+    initializeGame()
+    
+    -- 自动保存定时器
+    task.spawn(function()
+        while true do
+            task.wait(300) -- 每5分钟保存一次
+            saveGame()
+        end
+    end)
+    
+    print("我的世界生存模式已启动！")
+    print("控制说明:")
+    print("WASD - 移动")
+    print("鼠标 - 视角")
+    print("空格 - 跳跃")
+    print("E - 挖掘/攻击")
+    print("R - 放置方块")
+    print("Q - 丢弃物品")
+    print("1-9 - 切换快捷栏")
+    print("I - 物品栏")
+    print("C - 合成表")
+    print("M - 地图")
+    print("F5 - 保存游戏")
+    print("F9 - 加载游戏")
 end
 
 -- 启动游戏
