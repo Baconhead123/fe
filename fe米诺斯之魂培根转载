@@ -1,519 +1,179 @@
--- 配置
-local CONFIG = {
-    UI_Position = UDim2.new(0.1, 0, 0.1, 0),
-    UI_Size = UDim2.new(0.35, 0, 0.7, 0),
-    TypingSpeed = 0.02,
-    Debounce = 1.5,
-    MaxReplyLength = 120,
-    SaveKey = "AIChatData"
-}
-
--- 服务
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local Clipboard = game:GetService("Clipboard")
+-- AI聊天系统客户端脚本
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
 
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-
--- 全局状态
-local chatHistory = {}
-local aiPersona = "你是一个友好的Roblox游戏助手，说话简洁有趣"
-local isSending = false
-local isAiChatMode = false
-local saveData = {}
-
--- ============== 内置智能AI核心源码（N-Gram+关键词混合模型） ==============
-local RobloxAi = {}
-RobloxAi.__index = RobloxAi
-
--- 扩展后的Roblox专属训练语料库
-local TRAIN_CORPUS = {
-    -- 基础问候+游戏开场
-    "你好呀 一起玩Roblox吗",
-    "哈喽 你在哪个服务器呀",
-    "很高兴认识你 要不要组队探险",
-    "欢迎来到这个地图 这里有很多好玩的彩蛋",
-    -- 玩法相关
-    "这个游戏的玩法超简单 按WASD移动 鼠标点击交互",
-    "跳跃键是空格 你可以跳到那个高台上拿宝箱",
-    "小心怪物 它会攻击你 快躲到掩体后面",
-    "完成这个任务可以获得金币 能买新皮肤哦",
-    "生存模式要收集资源 建造房子抵御敌人",
-    "创造模式可以自由搭建 想做什么就做什么",
-    "竞速模式里要注意避开障碍物 第一个到终点有奖励",
-    -- 社交互动
-    "加个好友吧 以后一起玩游戏",
-    "我是这个战队的队长 要不要加入我们",
-    "快来我的房间 我开了私人服务器",
-    "能帮我一下吗 我卡在这个关卡了",
-    "谢谢你的帮助 这个道具送给你",
-    "大家一起合作 才能通关这个副本",
-    -- 道具与皮肤
-    "这个皮肤好酷 你是在哪里获得的",
-    "我有一把史诗级武器 攻击力超高",
-    "使用这个药水可以回血 关键时刻能救命",
-    "飞行器道具可以让你飞起来 快速穿越地图",
-    "宠物可以帮你战斗 还能卖萌",
-    "这个帽子是限量款 很难得到的",
-    -- 地图与场景
-    "这个城堡地图好大 我都迷路了",
-    "沙漠地图里有绿洲 可以补充水分",
-    "太空地图的失重效果太有趣了 跳起来会飘很久",
-    "海底地图有很多海洋生物 还有沉船宝藏",
-    "城市地图可以开车 还能逛商店",
-    "森林地图里有隐藏的洞穴 里面有稀有道具",
-    -- 日常闲聊
-    "你玩Roblox多久了 我玩了好几个月了",
-    "今天更新了新内容 快去体验一下",
-    "这个游戏的背景音乐很好听",
-    "我最喜欢的游戏模式是创造模式 很自由",
-    "晚上一起玩吗 我晚上有时间",
-    "拜拜 下次再一起玩 祝你玩得开心"
-}
-
--- 关键词-回复映射（增强匹配精准度）
-local KEYWORD_REPLIES = {
-    ["组队"] = {"好呀好呀 我们一起组队闯关！", "组队走起 我负责打怪你负责捡道具～", "没问题 组队后奖励还能平分呢"},
-    ["皮肤"] = {"皮肤可以在商城买 或者做任务获取哦", "这个皮肤我也想要 可惜太贵了", "皮肤只是装饰 实力才是关键啦"},
-    ["关卡"] = {"这个关卡我知道怎么过 跟着我走！", "卡在哪个关卡了？我来教你技巧", "这个关卡有点难 我们合作试试"},
-    ["好友"] = {"加好友呀 以后一起玩～", "好的 我已经发送好友请求啦", "好友列表满了 我先删个不常玩的"},
-    ["地图"] = {"这个地图的彩蛋超多 我带你去找", "这个地图我熟 哪里有宝藏都知道", "这个地图太大了 我经常迷路"}
-}
-
--- 初始化AI
-function RobloxAi.new(persona)
-    local self = setmetatable({}, RobloxAi)
-    self.persona = persona or "友好的游戏助手"
-    self.bigramChain = {} -- 二元词链: {前词 = {后词列表}}
-    self:TrainN_Gram() -- 训练N-Gram模型
-    return self
-end
-
--- 训练二元词链模型
-function RobloxAi:TrainN_Gram()
-    for _, sentence in ipairs(TRAIN_CORPUS) do
-        local words = self:Split(sentence, " ")
-        if #words < 2 then continue end
-        table.insert(words, "<END>") -- 句子结束标记
-        for i = 1, #words - 1 do
-            local currentWord = words[i]
-            local nextWord = words[i + 1]
-            if not self.bigramChain[currentWord] then
-                self.bigramChain[currentWord] = {}
-            end
-            table.insert(self.bigramChain[currentWord], nextWord)
-        end
-    end
-end
-
--- 字符串分割工具
-function RobloxAi:Split(str, sep)
-    local parts = {}
-    for part in string.gmatch(str, "([^" .. sep .. "]+)") do
-        table.insert(parts, part)
-    end
-    return parts
-end
-
--- 关键词匹配优先回复
-function RobloxAi:MatchKeyword(input)
-    for keyword, replies in pairs(KEYWORD_REPLIES) do
-        if input:find(keyword) then
-            return replies[math.random(1, #replies)]
-        end
-    end
-    return nil
-end
-
--- N-Gram模型生成回复
-function RobloxAi:GenerateFromChain(input)
-    local inputWords = self:Split(input, " ")
-    -- 优先选输入里的词作为起始词
-    local startWord = inputWords[math.random(1, #inputWords)]
-    if not self.bigramChain[startWord] then
-        -- 随机选语料库中的词作为起始
-        local allWords = {}
-        for word in pairs(self.bigramChain) do
-            if word ~= "<END>" then
-                table.insert(allWords, word)
-            end
-        end
-        startWord = allWords[math.random(1, #allWords)] or "Roblox"
-    end
-
-    local replyWords = {startWord}
-    local currentWord = startWord
-    -- 生成5-10个词的回复
-    local maxWords = math.random(5, 10)
-    while #replyWords < maxWords do
-        if not self.bigramChain[currentWord] or currentWord == "<END>" then
-            break
-        end
-        local nextWords = self.bigramChain[currentWord]
-        currentWord = nextWords[math.random(1, #nextWords)]
-        if currentWord ~= "<END>" then
-            table.insert(replyWords, currentWord)
-        end
-    end
-
-    return table.concat(replyWords, " ")
-end
-
--- 核心回复生成逻辑：关键词优先 + N-Gram兜底
-function RobloxAi:GetReply(input)
-    -- 第一步：优先匹配关键词
-    local keywordReply = self:MatchKeyword(input)
-    if keywordReply then
-        return self:ApplyPersona(keywordReply)
-    end
-    -- 第二步：N-Gram模型生成回复
-    local chainReply = self:GenerateFromChain(input)
-    return self:ApplyPersona(chainReply)
-end
-
--- 应用人设风格润色回复
-function RobloxAi:ApplyPersona(reply)
-    if self.persona:find("调皮") then
-        local suffix = {"😜", "～", "啦", "哟"}
-        return reply .. suffix[math.random(1, #suffix)]
-    elseif self.persona:find("高冷") then
-        return reply:gsub("呀|啦|哟|～", "") .. "."
-    elseif self.persona:find("可爱") then
-        local suffix = {"🥰", "喵～", "好耶～", "超棒的！"}
-        return reply .. suffix[math.random(1, #suffix)]
-    elseif self.persona:find("沙雕") then
-        local suffix = {"哈哈哈哈", "这波操作666", "笑死我了"}
-        return reply .. suffix[math.random(1, #suffix)]
-    else
-        return reply
-    end
-end
-
--- 实例化AI
-local aiInstance = RobloxAi.new(aiPersona)
-
--- ========== 存档/读档逻辑 ==========
-local function loadSaveData()
-    local saveObject = PlayerGui:FindFirstChild(CONFIG.SaveKey)
-    if not saveObject then return end
-    local success, data = pcall(function()
-        return game:GetService("HttpService"):JSONDecode(saveObject.Value)
-    end)
-    if success then
-        aiPersona = data.persona or aiPersona
-        aiInstance = RobloxAi.new(aiPersona) -- 重新训练AI
-        print("✅ 加载存档并更新AI人设")
-    end
-end
-
-local function saveDataToLocal()
-    saveData = {
-        persona = aiPersona
-    }
-    local saveObject = PlayerGui:FindFirstChild(CONFIG.SaveKey) or Instance.new("StringValue")
-    saveObject.Name = CONFIG.SaveKey
-    saveObject.Value = game:GetService("HttpService"):JSONEncode(saveData)
-    saveObject.Parent = PlayerGui
-    print("✅ 自动存档完成")
-end
-
-loadSaveData()
-task.spawn(function()
-    while task.wait(30) do
-        saveDataToLocal()
-    end
-end)
-
--- ========== UI创建 ==========
+-- 创建AI聊天UI
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "RobloxAiChatUI"
-ScreenGui.Parent = PlayerGui
+ScreenGui.Name = "AIChatGui"
+ScreenGui.Parent = player.PlayerGui
 
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Size = CONFIG.UI_Size
-MainFrame.Position = CONFIG.UI_Position
-MainFrame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-MainFrame.BorderSizePixel = 2
-MainFrame.BorderColor3 = Color3.new(0.3, 0.3, 0.3)
-MainFrame.Active = true
-MainFrame.Draggable = true
-MainFrame.Parent = ScreenGui
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0.4, 0, 0.6, 0)
+Frame.Position = UDim2.new(0.3, 0, 0.2, 0)
+Frame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+Frame.Parent = ScreenGui
 
-local TitleBar = Instance.new("Frame")
-TitleBar.Size = UDim2.new(1, 0, 0, 30)
-TitleBar.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-TitleBar.Parent = MainFrame
+-- 消息显示区域
+local ScrollingFrame = Instance.new("ScrollingFrame")
+ScrollingFrame.Size = UDim2.new(0.95, 0, 0.7, 0)
+ScrollingFrame.Position = UDim2.new(0.025, 0, 0.05, 0)
+ScrollingFrame.BackgroundTransparency = 1
+ScrollingFrame.Parent = Frame
 
-local TitleText = Instance.new("TextLabel")
-TitleText.Text = "Roblox专属AI聊天面板"
-TitleText.Size = UDim2.new(0.6, 0, 1, 0)
-TitleText.Position = UDim2.new(0, 5, 0, 0)
-TitleText.BackgroundTransparency = 1
-TitleText.TextColor3 = Color3.new(1, 1, 1)
-TitleText.TextSize = 16
-TitleText.Parent = TitleBar
+-- 输入框
+local TextBox = Instance.new("TextBox")
+TextBox.Size = UDim2.new(0.8, 0, 0.1, 0)
+TextBox.Position = UDim2.new(0.025, 0, 0.8, 0)
+TextBox.PlaceholderText = "输入消息..."
+TextBox.Parent = Frame
 
-local AiModeToggle = Instance.new("TextButton")
-AiModeToggle.Name = "AiModeToggle"
-AiModeToggle.Size = UDim2.new(0.25, 0, 0, 25)
-AiModeToggle.Position = UDim2.new(0.65, 0, 0, 2)
-AiModeToggle.BackgroundColor3 = Color3.new(0.4, 0.1, 0.1)
-AiModeToggle.Text = "AI聊天: 关闭"
-AiModeToggle.TextColor3 = Color3.new(1, 1, 1)
-AiModeToggle.TextSize = 12
-AiModeToggle.Parent = TitleBar
+-- 发送按钮
+local SendButton = Instance.new("TextButton")
+SendButton.Size = UDim2.new(0.15, 0, 0.1, 0)
+SendButton.Position = UDim2.new(0.85, 0, 0.8, 0)
+SendButton.Text = "发送"
+SendButton.Parent = Frame
 
-local MinimizeBtn = Instance.new("TextButton")
-MinimizeBtn.Size = UDim2.new(0, 30, 0, 30)
-MinimizeBtn.Position = UDim2.new(1, -30, 0, 0)
-MinimizeBtn.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-MinimizeBtn.Text = "-"
-MinimizeBtn.TextColor3 = Color3.new(1, 1, 1)
-MinimizeBtn.TextSize = 18
-MinimizeBtn.Parent = TitleBar
+-- 设置按钮
+local SettingsButton = Instance.new("TextButton")
+SettingsButton.Size = UDim2.new(0.15, 0, 0.05, 0)
+SettingsButton.Position = UDim2.new(0.85, 0, 0.75, 0)
+SettingsButton.Text = "设置"
+SettingsButton.Parent = Frame
 
-local PersonaFrame = Instance.new("Frame")
-PersonaFrame.Name = "PersonaFrame"
-PersonaFrame.Size = UDim2.new(1, -10, 0, 60)
-PersonaFrame.Position = UDim2.new(0, 5, 0, 35)
-PersonaFrame.BackgroundColor3 = Color3.new(0.15, 0.15, 0.15)
-PersonaFrame.Parent = MainFrame
-
-local PersonaLabel = Instance.new("TextLabel")
-PersonaLabel.Text = "AI人设:"
-PersonaLabel.Size = UDim2.new(1, 0, 0, 20)
-PersonaLabel.BackgroundTransparency = 1
-PersonaLabel.TextColor3 = Color3.new(0.9, 0.9, 0.9)
-PersonaLabel.TextSize = 12
-PersonaLabel.Parent = PersonaFrame
-
-local PersonaInput = Instance.new("TextBox")
-PersonaInput.Name = "PersonaInput"
-PersonaInput.Size = UDim2.new(1, -70, 0, 30)
-PersonaInput.Position = UDim2.new(0, 0, 0, 20)
-PersonaInput.BackgroundColor3 = Color3.new(0.25, 0.25, 0.25)
-PersonaInput.TextColor3 = Color3.new(1, 1, 1)
-PersonaInput.PlaceholderText = "输入人设（如：调皮的Roblox玩家）"
-PersonaInput.PlaceholderColor3 = Color3.new(0.6, 0.6, 0.6)
-PersonaInput.TextSize = 12
-PersonaInput.Text = aiPersona
-PersonaInput.ClearTextOnFocus = false
-PersonaInput.Parent = PersonaFrame
-
-local SavePersonaBtn = Instance.new("TextButton")
-SavePersonaBtn.Name = "SavePersonaBtn"
-SavePersonaBtn.Size = UDim2.new(0, 65, 0, 30)
-SavePersonaBtn.Position = UDim2.new(1, -65, 0, 20)
-SavePersonaBtn.BackgroundColor3 = Color3.new(0.2, 0.5, 0.2)
-SavePersonaBtn.Text = "保存"
-SavePersonaBtn.TextColor3 = Color3.new(1, 1, 1)
-SavePersonaBtn.TextSize = 12
-SavePersonaBtn.Parent = PersonaFrame
-
-local ChatFrame = Instance.new("ScrollingFrame")
-ChatFrame.Name = "ChatFrame"
-ChatFrame.Size = UDim2.new(1, -10, 1, -165)
-ChatFrame.Position = UDim2.new(0, 5, 0, 100)
-ChatFrame.BackgroundColor3 = Color3.new(0.05, 0.05, 0.05)
-ChatFrame.ScrollBarThickness = 5
-ChatFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-ChatFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-ChatFrame.Parent = MainFrame
-
-local ChatLayout = Instance.new("UIListLayout")
-ChatLayout.Padding = UDim.new(0, 5)
-ChatLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-ChatLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-ChatLayout.SortOrder = Enum.SortOrder.LayoutOrder
-ChatLayout.Parent = ChatFrame
-
-local InputFrame = Instance.new("Frame")
-InputFrame.Size = UDim2.new(1, -10, 0, 30)
-InputFrame.Position = UDim2.new(0, 5, 1, -35)
-InputFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-InputFrame.Parent = MainFrame
-
-local InputBox = Instance.new("TextBox")
-InputBox.Size = UDim2.new(0.8, 0, 1, 0)
-InputBox.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-InputBox.TextColor3 = Color3.new(1, 1, 1)
-InputBox.PlaceholderText = "输入消息..."
-InputBox.PlaceholderColor3 = Color3.new(0.6, 0.6, 0.6)
-InputBox.TextSize = 14
-InputBox.ClearTextOnFocus = false
-InputBox.Parent = InputFrame
-
-local SendBtn = Instance.new("TextButton")
-SendBtn.Size = UDim2.new(0.2, 0, 1, 0)
-SendBtn.Position = UDim2.new(0.8, 0, 0, 0)
-SendBtn.BackgroundColor3 = Color3.new(0.2, 0.5, 0.8)
-SendBtn.Text = "发送"
-SendBtn.TextColor3 = Color3.new(1, 1, 1)
-SendBtn.TextSize = 14
-SendBtn.Parent = InputFrame
-
--- ========== 消息处理逻辑 ==========
-local function addMessage(text, isUser, isAiChat)
-    local messageFrame = Instance.new("Frame")
-    messageFrame.Size = UDim2.new(1, -10, 0, 0)
-    messageFrame.BackgroundTransparency = 1
-    messageFrame.LayoutOrder = #chatHistory + 1
-    messageFrame.Parent = ChatFrame
-
-    local messageLabel = Instance.new("TextLabel")
-    messageLabel.Size = UDim2.new(1, -50, 0, 0)
-    messageLabel.BackgroundTransparency = 1
-    messageLabel.TextColor3 = isUser and Color3.new(0.4, 1, 0.4) or Color3.new(1, 1, 0.6)
-    messageLabel.Text = (isUser and "你: " or isAiChat and "AI化身: " or "AI: ") .. text
-    messageLabel.TextSize = 14
-    messageLabel.TextWrapped = true
-    messageLabel.AutomaticSize = Enum.AutomaticSize.Y
-    messageLabel.Parent = messageFrame
-
-    if not isUser then
-        local copyBtn = Instance.new("TextButton")
-        copyBtn.Size = UDim2.new(0, 45, 0, 20)
-        copyBtn.Position = UDim2.new(1, -45, 0, 0)
-        copyBtn.BackgroundColor3 = Color3.new(0.3, 0.3, 0.5)
-        copyBtn.Text = "复制"
-        copyBtn.TextColor3 = Color3.new(1, 1, 1)
-        copyBtn.TextSize = 10
-        copyBtn.Parent = messageFrame
-
-        copyBtn.MouseButton1Click:Connect(function()
-            Clipboard:SetText(text)
-            copyBtn.Text = "已复制"
-            task.wait(1)
-            copyBtn.Text = "复制"
-        end)
-    end
-
-    messageFrame.AutomaticSize = Enum.AutomaticSize.Y
-    table.insert(chatHistory, messageFrame)
-    ChatFrame.CanvasPosition = Vector2.new(0, ChatFrame.CanvasSize.Y.Offset)
+-- 简单的本地AI响应函数 (可替换为更复杂的模型)
+local function getAIResponse(message, personality)
+    -- 基础响应逻辑
+    local responses = {
+        "我明白了，你是在说: "..message,
+        "有趣的观点，关于"..message.."你怎么看？",
+        "根据我的理解，"..message.."是一个值得探讨的话题",
+        personality.."说: "..message.."让我想到了一些事情..."
+    }
+    return responses[math.random(1, #responses)]
 end
 
-local function aiTypeReply(text, isAiChat)
-    local messageFrame = Instance.new("Frame")
-    messageFrame.Size = UDim2.new(1, -10, 0, 0)
+-- 对话历史存储
+local chatHistory = {}
+local currentPersonality = "普通AI"
+local isPlayerAI = false
+
+-- 添加消息到聊天框
+local function addMessage(sender, message)
+    local messageFrame = Instance.new("TextLabel")
+    messageFrame.Size = UDim2.new(0.95, 0, 0, 30)
+    messageFrame.Position = UDim2.new(0.025, 0, 0, #chatHistory * 35 + 5)
+    messageFrame.Text = sender..": "..message
+    messageFrame.TextWrapped = true
+    messageFrame.TextXAlignment = Enum.TextXAlignment.Left
     messageFrame.BackgroundTransparency = 1
-    messageFrame.LayoutOrder = #chatHistory + 1
-    messageFrame.Parent = ChatFrame
-
-    local messageLabel = Instance.new("TextLabel")
-    messageLabel.Size = UDim2.new(1, -50, 0, 0)
-    messageLabel.BackgroundTransparency = 1
-    messageLabel.TextColor3 = Color3.new(1, 1, 0.6)
-    messageLabel.Text = isAiChat and "AI化身: " or "AI: "
-    messageLabel.TextSize = 14
-    messageLabel.TextWrapped = true
-    messageLabel.AutomaticSize = Enum.AutomaticSize.Y
-    messageLabel.Parent = messageFrame
-
-    local copyBtn = Instance.new("TextButton")
-    copyBtn.Size = UDim2.new(0, 45, 0, 20)
-    copyBtn.Position = UDim2.new(1, -45, 0, 0)
-    copyBtn.BackgroundColor3 = Color3.new(0.3, 0.3, 0.5)
-    copyBtn.Text = "复制"
-    copyBtn.TextColor3 = Color3.new(1, 1, 1)
-    copyBtn.TextSize = 10
-    copyBtn.Parent = messageFrame
-
-    copyBtn.MouseButton1Click:Connect(function()
-        Clipboard:SetText(text)
-        copyBtn.Text = "已复制"
-        task.wait(1)
-        copyBtn.Text = "复制"
-    end)
-
-    for i = 1, #text do
-        messageLabel.Text = messageLabel.Text .. string.sub(text, i, i)
-        ChatFrame.CanvasPosition = Vector2.new(0, ChatFrame.CanvasSize.Y.Offset)
-        task.wait(CONFIG.TypingSpeed)
-    end
-
-    messageFrame.AutomaticSize = Enum.AutomaticSize.Y
-    table.insert(chatHistory, messageFrame)
-end
-
--- ========== 按钮逻辑 ==========
-SavePersonaBtn.MouseButton1Click:Connect(function()
-    if PersonaInput.Text == "" then return end
-    aiPersona = PersonaInput.Text
-    aiInstance = RobloxAi.new(aiPersona) -- 重新训练AI
-    saveDataToLocal()
-    addMessage("✅ AI人设已更新并重新训练", false, false)
-end)
-
-SendBtn.MouseButton1Click:Connect(function()
-    if isSending or InputBox.Text == "" then return end
-    isSending = true
-    local userText = InputBox.Text
-    InputBox.Text = ""
+    messageFrame.TextColor3 = Color3.fromRGB(255, 255, 255)
+    messageFrame.Parent = ScrollingFrame
     
-    addMessage(userText, true, false)
-    task.spawn(function()
-        local aiReply = aiInstance:GetReply(userText)
-        aiTypeReply(aiReply, false)
-        task.wait(CONFIG.Debounce)
-        isSending = false
+    -- 复制按钮
+    local copyButton = Instance.new("TextButton")
+    copyButton.Size = UDim2.new(0.1, 0, 1, 0)
+    copyButton.Position = UDim2.new(0.9, 0, 0, 0)
+    copyButton.Text = "复制"
+    copyButton.Parent = messageFrame
+    
+    copyButton.MouseButton1Click:Connect(function()
+        setclipboard(message)
     end)
+    
+    table.insert(chatHistory, {sender = sender, message = message})
+    ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, #chatHistory * 35)
+    ScrollingFrame.CanvasPosition = Vector2.new(0, #chatHistory * 35)
+end
+
+-- 发送消息处理
+SendButton.MouseButton1Click:Connect(function()
+    local message = TextBox.Text
+    if message == "" then return end
+    
+    if isPlayerAI then
+        -- 玩家作为AI发送消息
+        addMessage(player.Name.."(AI模式)", message)
+    else
+        -- 玩家发送普通消息
+        addMessage(player.Name, message)
+        -- AI回复
+        local response = getAIResponse(message, currentPersonality)
+        addMessage(currentPersonality, response)
+    end
+    
+    TextBox.Text = ""
 end)
 
-InputBox.Focused:Connect(function()
-    UserInputService.InputBegan:Connect(function(input)
-        if input.KeyCode == Enum.KeyCode.Return and InputBox:IsFocused() then
-            SendBtn.MouseButton1Click:Fire()
-        end
+-- 设置窗口
+local function showSettings()
+    local settingsFrame = Instance.new("Frame")
+    settingsFrame.Size = UDim2.new(0.8, 0, 0.6, 0)
+    settingsFrame.Position = UDim2.new(0.1, 0, 0.2, 0)
+    settingsFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    settingsFrame.Parent = ScreenGui
+    
+    -- AI人设设置
+    local personalityLabel = Instance.new("TextLabel")
+    personalityLabel.Text = "AI人设:"
+    personalityLabel.Position = UDim2.new(0.05, 0, 0.1, 0)
+    personalityLabel.Size = UDim2.new(0.3, 0, 0.05, 0)
+    personalityLabel.Parent = settingsFrame
+    
+    local personalityBox = Instance.new("TextBox")
+    personalityBox.Text = currentPersonality
+    personalityBox.Position = UDim2.new(0.4, 0, 0.1, 0)
+    personalityBox.Size = UDim2.new(0.5, 0, 0.05, 0)
+    personalityBox.Parent = settingsFrame
+    
+    -- AI模式开关
+    local aiModeLabel = Instance.new("TextLabel")
+    aiModeLabel.Text = "玩家AI模式:"
+    aiModeLabel.Position = UDim2.new(0.05, 0, 0.2, 0)
+    aiModeLabel.Size = UDim2.new(0.3, 0, 0.05, 0)
+    aiModeLabel.Parent = settingsFrame
+    
+    local aiModeToggle = Instance.new("TextButton")
+    aiModeToggle.Text = isPlayerAI and "开启" or "关闭"
+    aiModeToggle.Position = UDim2.new(0.4, 0, 0.2, 0)
+    aiModeToggle.Size = UDim2.new(0.5, 0, 0.05, 0)
+    aiModeToggle.Parent = settingsFrame
+    
+    aiModeToggle.MouseButton1Click:Connect(function()
+        isPlayerAI = not isPlayerAI
+        aiModeToggle.Text = isPlayerAI and "开启" or "关闭"
     end)
-end)
-
-local isMinimized = false
-MinimizeBtn.MouseButton1Click:Connect(function()
-    isMinimized = not isMinimized
-    ChatFrame.Visible = not isMinimized
-    InputFrame.Visible = not isMinimized
-    PersonaFrame.Visible = not isMinimized
-    MainFrame.Size = isMinimized and UDim2.new(0.35, 0, 0, 30) or CONFIG.UI_Size
-end)
-
-AiModeToggle.MouseButton1Click:Connect(function()
-    isAiChatMode = not isAiChatMode
-    AiModeToggle.BackgroundColor3 = isAiChatMode and Color3.new(0.1, 0.4, 0.1) or Color3.new(0.4, 0.1, 0.1)
-    AiModeToggle.Text = isAiChatMode and "AI聊天: 开启" or "AI聊天: 关闭"
-    addMessage(isAiChatMode and "🔵 AI化身模式已开启" or "🔴 AI化身模式已关闭", false, false)
-end)
-
--- ========== 公共聊天监听 ==========
-local function onPlayerChatted(player, message)
-    if not isAiChatMode or player == LocalPlayer then return end
-    if message:sub(1, 1) == "/" then return end
-
-    addMessage(player.Name .. ": " .. message, false, false)
-    task.spawn(function()
-        local aiReply = aiInstance:GetReply(message)
-        aiTypeReply(aiReply, true)
-        
-        local success, err = pcall(function()
-            local ChatService = require(ReplicatedStorage:FindFirstChild("ChatServiceRunner"):FindFirstChild("ChatService"))
-            local speaker = ChatService:GetSpeaker(LocalPlayer.Name)
-            speaker:SayMessage(aiReply, "All")
-        end)
-        if not success then
-            warn("公共聊天发送失败: " .. err)
-            addMessage("❌ 公共聊天发送失败", false, false)
-        end
+    
+    -- 保存按钮
+    local saveButton = Instance.new("TextButton")
+    saveButton.Text = "保存设置"
+    saveButton.Position = UDim2.new(0.35, 0, 0.8, 0)
+    saveButton.Size = UDim2.new(0.3, 0, 0.1, 0)
+    saveButton.Parent = settingsFrame
+    
+    saveButton.MouseButton1Click:Connect(function()
+        currentPersonality = personalityBox.Text
+        settingsFrame:Destroy()
     end)
 end
 
-for _, player in ipairs(Players:GetPlayers()) do
-    player.Chatted:Connect(onPlayerChatted)
-end
-Players.PlayerAdded:Connect(function(player)
-    player.Chatted:Connect(onPlayerChatted)
-end)
+SettingsButton.MouseButton1Click:Connect(showSettings)
 
-print("✅ Roblox专属AI聊天面板加载完成")
+-- 自动存档功能
+local function saveChatHistory()
+    local data = {
+        personality = currentPersonality,
+        history = chatHistory,
+        isPlayerAI = isPlayerAI
+    }
+    -- 这里可以替换为实际的存档逻辑
+    print("聊天记录已存档:", data)
+end
+
+-- 每5分钟自动存档
+while true do
+    wait(300)
+    saveChatHistory()
+end
