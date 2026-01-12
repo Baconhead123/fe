@@ -1,542 +1,401 @@
--- 我的世界超丰富生存客户端脚本 | 本地生效 | 手机适配 | 原创内容
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
-local Lighting = game:GetService("Lighting")
-local Player = Players.LocalPlayer
-local PlayerGui = Player:WaitForChild("PlayerGui")
-local Character = Player.Character or Player.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-local RootPart = Character:WaitForChild("HumanoidRootPart")
-
--- ########## 原创配置 | 超大地图+多群系+原创生物 ##########
+-- 配置
 local CONFIG = {
-    MapSize = Vector2.new(10000, 10000), -- 超大型地图
-    CaveMaxDepth = 1200, -- 深层矿洞深度
-    RenderDistance = UserInputService.TouchEnabled and 150 or 300, -- 手机端降渲染
-    BiomeScale = 500, -- 群系生成尺度
-    MobCap = 30, -- 生物上限
-    DayNightSpeed = 0.1, -- 日夜循环速度
-    TorchLightRange = 20 -- 火把照明范围
+    UI_Position = UDim2.new(0.1, 0, 0.1, 0),
+    UI_Size = UDim2.new(0.35, 0, 0.7, 0),
+    TypingSpeed = 0.02,
+    Debounce = 1.5,
+    MaxReplyLength = 300,
+    SaveKey = "AIChatData" -- 本地存档键名
 }
 
--- ########## 原创群系定义 | 8大独特群系 ##########
-local BIOMES = {
-    {Name = "翠绿平原", Color = Color3.new(0.3, 0.7, 0.2), Trees = 0.01, OreRate = 0.03, Mobs = {"野兔", "鹿", "平原狼"}},
-    {Name = "红杉森林", Color = Color3.new(0.2, 0.5, 0.1), Trees = 0.03, OreRate = 0.05, Mobs = {"松鼠", "啄木鸟", "森林蜘蛛"}},
-    {Name = "荒漠沙丘", Color = Color3.new(0.9, 0.8, 0.4), Trees = 0.001, OreRate = 0.08, Mobs = {"沙蝎", "秃鹫", "荒漠行者"}},
-    {Name = "冰晶雪原", Color = Color3.new(0.9, 0.95, 1), Trees = 0.005, OreRate = 0.02, Mobs = {"雪狐", "冰熊", "雪怪"}},
-    {Name = "火山岩地", Color = Color3.new(0.6, 0.3, 0.2), Trees = 0, OreRate = 0.12, Mobs = {"熔岩蠕虫", "岩魔", "火焰蝙蝠"}},
-    {Name = "沼泽湿地", Color = Color3.new(0.2, 0.4, 0.3), Trees = 0.02, OreRate = 0.04, Mobs = {"沼泽蛙", "水蛭", "沼泽怨灵"}},
-    {Name = "高空浮岛", Color = Color3.new(0.4, 0.6, 0.8), Trees = 0.015, OreRate = 0.15, Mobs = {"翼鸟", "云精灵", "空岛守卫"}},
-    {Name = "深渊矿洞", Color = Color3.new(0.1, 0.1, 0.2), Trees = 0, OreRate = 0.25, Mobs = {"洞穴爬虫", "晶簇怪", "深渊守卫"}}
-}
+-- 服务
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
+local Clipboard = game:GetService("Clipboard")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
--- ########## 超200种方块 | 含原创矿物 ##########
-local BLOCKS = {
-    -- 基础方块
-    {ID = 1, Name = "草方块", Hardness = 1, Texture = "rbxassetid://154966421", Drop = "泥土", Light = 0},
-    {ID = 2, Name = "泥土", Hardness = 1, Texture = "rbxassetid://154966421", Drop = "泥土", Light = 0},
-    {ID = 3, Name = "石头", Hardness = 2, Texture = "rbxassetid://154966423", Drop = "石头", Light = 0},
-    {ID = 4, Name = "红杉木", Hardness = 1.5, Texture = "rbxassetid://154966425", Drop = "红杉木", Light = 0},
-    {ID = 5, Name = "砂岩", Hardness = 1.8, Texture = "rbxassetid://154966427", Drop = "砂岩", Light = 0},
-    {ID = 6, Name = "冰砖", Hardness = 2.2, Texture = "rbxassetid://154966429", Drop = "冰砖", Light = 0, Slippery = true},
-    {ID = 7, Name = "火山岩", Hardness = 3, Texture = "rbxassetid://154966431", Drop = "火山岩", Light = 0, LavaNear = true},
-    {ID = 8, Name = "沼泽泥", Hardness = 1.2, Texture = "rbxassetid://154966433", Drop = "沼泽泥", Light = 0, Slow = true},
-    {ID = 9, Name = "云石", Hardness = 2.5, Texture = "rbxassetid://154966435", Drop = "云石", Light = 0, Float = true},
-    -- 矿物方块（含原创）
-    {ID = 10, Name = "煤矿石", Hardness = 3, Texture = "rbxassetid://154966437", Drop = "煤炭", Light = 0},
-    {ID = 11, Name = "铁矿石", Hardness = 4, Texture = "rbxassetid://154966439", Drop = "铁矿石", Light = 0},
-    {ID = 12, Name = "金矿石", Hardness = 5, Texture = "rbxassetid://154966441", Drop = "金矿石", Light = 0},
-    {ID = 13, Name = "钻石矿", Hardness = 7, Texture = "rbxassetid://154966443", Drop = "钻石", Light = 0},
-    {ID = 14, Name = "红石矿", Hardness = 4, Texture = "rbxassetid://154966445", Drop = "红石", Light = 1},
-    {ID = 15, Name = "水晶矿", Hardness = 6, Texture = "rbxassetid://154966447", Drop = "水晶", Light = 8, OreLevel = 800},
-    {ID = 16, Name = "星能矿", Hardness = 9, Texture = "rbxassetid://154966449", Drop = "星能碎片", Light = 12, OreLevel = 1000},
-    -- 功能方块
-    {ID = 17, Name = "工作台", Hardness = 2, Texture = "rbxassetid://154966451", Drop = "工作台", Light = 0, Craft = true},
-    {ID = 18, Name = "熔炉", Hardness = 3, Texture = "rbxassetid://154966453", Drop = "熔炉", Light = 0, Smelt = true},
-    {ID = 19, Name = "宝箱", Hardness = 2, Texture = "rbxassetid://154966455", Drop = "宝箱", Light = 0, Storage = true},
-    {ID = 20, Name = "火把", Hardness = 0, Texture = "rbxassetid://154966457", Drop = "火把", Light = CONFIG.TorchLightRange},
-    {ID = 21, Name = "水晶灯", Hardness = 2, Texture = "rbxassetid://154966459", Drop = "水晶灯", Light = 25},
-    -- 装饰方块
-    {ID = 22, Name = "红杉台阶", Hardness = 1.5, Texture = "rbxassetid://154966461", Drop = "红杉台阶", Light = 0},
-    {ID = 23, Name = "砂岩栅栏", Hardness = 1.8, Texture = "rbxassetid://154966463", Drop = "砂岩栅栏", Light = 0},
-    {ID = 24, Name = "冰窗花", Hardness = 1, Texture = "rbxassetid://154966465", Drop = "冰窗花", Light = 3},
-    {ID = 25, Name = "火山藤蔓", Hardness = 0.5, Texture = "rbxassetid://154966467", Drop = "火山藤蔓", Light = 2}
-}
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- ########## 原创生物 | 友好+敌对+BOSS ##########
-local CREATURES = {
-    -- 友好生物
-    {ID = 1, Name = "野兔", Health = 3, Damage = 0, Drop = "兔肉", Friendly = true, Speed = 12, Biome = {"翠绿平原", "冰晶雪原"}},
-    {ID = 2, Name = "鹿", Health = 8, Damage = 0, Drop = "鹿肉+鹿皮", Friendly = true, Speed = 8, Biome = {"翠绿平原", "红杉森林"}},
-    {ID = 3, Name = "松鼠", Health = 2, Damage = 0, Drop = "松果", Friendly = true, Speed = 15, Biome = {"红杉森林"}},
-    {ID = 4, Name = "雪狐", Health = 5, Damage = 0, Drop = "狐皮", Friendly = true, Speed = 14, Biome = {"冰晶雪原"}},
-    {ID = 5, Name = "云精灵", Health = 10, Damage = 0, Drop = "云碎片", Friendly = true, Speed = 20, Fly = true, Biome = {"高空浮岛"}},
-    -- 敌对生物
-    {ID = 6, Name = "平原狼", Health = 15, Damage = 3, Drop = "狼皮", Friendly = false, Speed = 10, Biome = {"翠绿平原"}},
-    {ID = 7, Name = "沙蝎", Health = 10, Damage = 4, Drop = "蝎毒", Friendly = false, Speed = 11, Biome = {"荒漠沙丘"}},
-    {ID = 8, Name = "熔岩蠕虫", Health = 25, Damage = 6, Drop = "熔岩核心", Friendly = false, Speed = 7, FireResist = true, Biome = {"火山岩地"}},
-    {ID = 9, Name = "沼泽怨灵", Health = 20, Damage = 5, Drop = "怨灵之泪", Friendly = false, Speed = 9, Invisible = true, Biome = {"沼泽湿地"}},
-    {ID = 10, Name = "洞穴爬虫", Health = 18, Damage = 4, Drop = "爬虫甲壳", Friendly = false, Speed = 13, Biome = {"深渊矿洞"}},
-    -- BOSS生物
-    {ID = 11, Name = "岩魔", Health = 100, Damage = 12, Drop = "岩魔核心", Friendly = false, Speed = 5, Boss = true, Biome = {"火山岩地"}},
-    {ID = 12, Name = "空岛守卫", Health = 150, Damage = 15, Drop = "守卫巨剑", Friendly = false, Speed = 8, Fly = true, Boss = true, Biome = {"高空浮岛"}},
-    {ID = 13, Name = "深渊守卫", Health = 200, Damage = 20, Drop = "深渊之心", Friendly = false, Speed = 10, Boss = true, Biome = {"深渊矿洞"}}
-}
+-- 全局状态
+local chatHistory = {}
+local aiPersona = "你是一个友好的Roblox游戏AI助手，说话简洁有趣，积极回应玩家的问题。"
+local isSending = false
+local isAiChatMode = false -- AI化身模式开关
+local saveData = {}
 
--- ########## 道具+工具+武器+食物 | 超丰富 ##########
-local ITEMS = {
-    -- 工具
-    {ID = 1, Name = "木镐", MiningSpeed = 2, Durability = 60, Craft = {{"木头", 3}, {"木棍", 2}}},
-    {ID = 2, Name = "石镐", MiningSpeed = 3, Durability = 132, Craft = {{"石头", 3}, {"木棍", 2}}},
-    {ID = 3, Name = "铁镐", MiningSpeed = 4, Durability = 251, Craft = {{"铁锭", 3}, {"木棍", 2}}},
-    {ID = 4, Name = "金镐", MiningSpeed = 5, Durability = 33, Craft = {{"金锭", 3}, {"木棍", 2}}},
-    {ID = 5, Name = "钻石镐", MiningSpeed = 6, Durability = 1561, Craft = {{"钻石", 3}, {"木棍", 2}}},
-    {ID = 6, Name = "水晶镐", MiningSpeed = 8, Durability = 2000, Craft = {{"水晶", 3}, {"木棍", 2}}},
-    {ID = 7, Name = "星能镐", MiningSpeed = 12, Durability = 5000, Craft = {{"星能碎片", 3}, {"水晶棒", 2}}},
-    -- 武器
-    {ID = 8, Name = "木剑", Damage = 4, Durability = 60, Craft = {{"木头", 2}, {"木棍", 1}}},
-    {ID = 9, Name = "岩魔巨剑", Damage = 25, Durability = 3000, Craft = {{"岩魔核心", 1}, {"火山岩", 5}}},
-    -- 食物
-    {ID = 10, Name = "兔肉", Hunger = 3, Craft = {}},
-    {ID = 11, Name = "烤鹿肉", Hunger = 8, Craft = {{"鹿肉", 1}, {"煤炭", 1}}},
-    {ID = 12, Name = "星能果实", Hunger = 20, Craft = {{"星能碎片", 1}, {"水晶", 2}}},
-    -- 特殊道具
-    {ID = 13, Name = "云之翼", Fly = true, Durability = 1000, Craft = {{"云碎片", 5}, {"云精灵之羽", 1}}},
-    {ID = 14, Name = "深渊披风", Invisible = true, Durability = 1500, Craft = {{"深渊之心", 1}, {"爬虫甲壳", 10}}}
-}
-
--- ########## 合成表 | 无需手动填 ##########
-local CRAFT_RECIPES = {
-    {Result = "工作台", Ingredients = {{"木头", 4}}, Grid = "2x2"},
-    {Result = "熔炉", Ingredients = {{"石头", 8}}, Grid = "3x3"},
-    {Result = "火把", Ingredients = {{"煤炭", 1}, {"木棍", 1}}, Grid = "2x1"},
-    {Result = "水晶灯", Ingredients = {{"水晶", 4}, {"火把", 1}}, Grid = "3x3"},
-    {Result = "云之翼", Ingredients = {{"云碎片", 5}, {"云精灵之羽", 1}}, Grid = "3x3"}
-}
-
--- ########## 本地数据存储 | 背包+状态 ##########
-local LocalData = {
-    Inventory = {},
-    SelectedSlot = 1,
-    Hunger = 20,
-    Thirst = 20,
-    CurrentBiome = "翠绿平原",
-    PlacedBlocks = {},
-    SpawnedMobs = {},
-    UnlockedRecipes = {}
-}
-
--- 初始化背包（默认送基础工具）
-for _, item in ipairs(ITEMS) do
-    if item.Name == "木镐" or item.Name == "木剑" or item.Name == "火把" then
-        table.insert(LocalData.Inventory, {Item = item, Count = 1, Durability = item.Durability})
-    else
-        table.insert(LocalData.Inventory, {Item = item, Count = 0, Durability = item.Durability})
-    end
-end
-
--- ########## 地形生成 | 多群系+深层矿洞 ##########
-local function GenerateTerrain()
-    local Terrain = Workspace.Terrain
-    local Seed = math.random(1, 1000000)
-    math.randomseed(Seed)
-
-    -- 群系噪声生成
-    local function GetBiomeAt(x, z)
-        local noise = math.noise(x/CONFIG.BiomeScale, z/CONFIG.BiomeScale)
-        local biomeIndex = math.floor((noise + 1) * #BIOMES / 2) + 1
-        return BIOMES[math.clamp(biomeIndex, 1, #BIOMES)]
-    end
-
-    -- 生成地表
-    for x = -CONFIG.MapSize.X/2, CONFIG.MapSize.X/2 do
-        for z = -CONFIG.MapSize.Y/2, CONFIG.MapSize.Y/2 do
-            local biome = GetBiomeAt(x, z)
-            local height = math.noise(x/200, z/200) * 50 + 60
-            local caveNoise = math.noise(x/100, z/100, 0)
-
-            -- 填充地表方块
-            for y = 0, height do
-                local blockType = y == height and biome.Name == "翠绿平原" and 1 or 2
-                if biome.Name == "红杉森林" then blockType = y == height and 1 or 4 end
-                if biome.Name == "荒漠沙丘" then blockType = y == height and 5 or 5 end
-                if biome.Name == "冰晶雪原" then blockType = y == height and 6 or 3 end
-                if biome.Name == "火山岩地" then blockType = y == height and 7 or 7 end
-                if biome.Name == "沼泽湿地" then blockType = y == height and 8 or 8 end
-                if biome.Name == "高空浮岛" then blockType = y == height and 9 or 9 end
-
-                local block = BLOCKS[blockType]
-                local material = Enum.Material.Grass
-                if block.Name == "石头" then material = Enum.Material.Rock end
-                if block.Name == "砂岩" then material = Enum.Material.Sandstone end
-                if block.Name == "冰砖" then material = Enum.Material.Ice end
-
-                Terrain:FillBlock(CFrame.new(x, y, z), Vector3.new(1,1,1), material)
-            end
-
-            -- 生成红杉树
-            if biome.Name == "红杉森林" and math.random() < biome.Trees then
-                local treeHeight = math.random(8, 15)
-                for ty = height, height + treeHeight do
-                    Terrain:FillBlock(CFrame.new(x, ty, z), Vector3.new(1,1,1), Enum.Material.Wood)
-                end
-                for tx = x-3, x+3 do
-                    for tz = z-3, z+3 do
-                        for ty = height + treeHeight - 3, height + treeHeight + 2 do
-                            Terrain:FillBlock(CFrame.new(tx, ty, tz), Vector3.new(1,1,1), Enum.Material.LeafyGrass)
-                        end
-                    end
-                end
-            end
-
-            -- 生成深层矿洞+原创矿物
-            if caveNoise > 0.7 then
-                for cy = -100, -CONFIG.CaveMaxDepth do
-                    local caveSize = math.noise(x/50, z/50, cy/50) * 5
-                    Terrain:FillBlock(CFrame.new(x, cy, z), Vector3.new(caveSize, caveSize, caveSize), Enum.Material.Air)
-                    
-                    -- 矿物生成（按深度）
-                    local oreChance = math.random()
-                    if cy > -200 and oreChance < 0.05 then
-                        Terrain:FillBlock(CFrame.new(x, cy, z), Vector3.new(1,1,1), Enum.Material.Coal)
-                    elseif cy > -400 and oreChance < 0.03 then
-                        Terrain:FillBlock(CFrame.new(x, cy, z), Vector3.new(1,1,1), Enum.Material.Iron)
-                    elseif cy > -600 and oreChance < 0.01 then
-                        Terrain:FillBlock(CFrame.new(x, cy, z), Vector3.new(1,1,1), Enum.Material.Gold)
-                    elseif cy > -800 and oreChance < 0.005 then
-                        Terrain:FillBlock(CFrame.new(x, cy, z), Vector3.new(1,1,1), Enum.Material.Diamond)
-                    elseif cy > -1000 and oreChance < 0.003 then
-                        Terrain:FillBlock(CFrame.new(x, cy, z), Vector3.new(1,1,1), Enum.Material.Neon) -- 水晶矿
-                    elseif cy <= -1000 and oreChance < 0.001 then
-                        Terrain:FillBlock(CFrame.new(x, cy, z), Vector3.new(1,1,1), Enum.Material.Pearlescent) -- 星能矿
-                    end
-                end
-            end
-        end
-    end
-    print("地形生成完成 | 群系:"..#BIOMES.." | 地图尺寸:"..CONFIG.MapSize.X.."x"..CONFIG.MapSize.Y)
-end
-
--- ########## UI系统 | 复用Roblox原生 | 手机适配 ##########
-local function CreateUI()
-    -- 隐藏多余UI，保留核心
-    game.StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
-    game.StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, true)
-    PlayerGui:SetTopbarTransparency(1)
-
-    -- 原生快捷栏扩展
-    local HotbarGui = Instance.new("ScreenGui", PlayerGui)
-    HotbarGui.Name = "HotbarGui"
-    local Hotbar = Instance.new("Frame", HotbarGui)
-    Hotbar.Size = UDim2.new(0.9, 0, 0.1, 0)
-    Hotbar.Position = UDim2.new(0.05, 0, 0.85, 0)
-    Hotbar.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-    Hotbar.BackgroundTransparency = 0.3
-
-    -- 9格快捷栏
-    for i = 1,9 do
-        local Slot = Instance.new("ImageButton", Hotbar)
-        Slot.Size = UDim2.new(1/9 - 0.01, 0, 0.9, 0)
-        Slot.Position = UDim2.new((i-1)/9 + 0.005, 0, 0.05, 0)
-        Slot.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-        Slot.BorderColor3 = i == 1 and Color3.new(1,1,0) or Color3.new(0.3,0.3,0.3)
-
-        local CountText = Instance.new("TextLabel", Slot)
-        CountText.Size = UDim2.new(0.4,0,0.4,0)
-        CountText.Position = UDim2.new(0.6,0,0.6,0)
-        CountText.BackgroundTransparency = 1
-        CountText.TextColor3 = Color3.new(1,1,1)
-        CountText.TextScaled = true
-        Slot.CountText = CountText
-
-        Slot.MouseButton1Click:Connect(function()
-            LocalData.SelectedSlot = i
-            for _,s in ipairs(Hotbar:GetChildren()) do
-                s.BorderColor3 = s == Slot and Color3.new(1,1,0) or Color3.new(0.3,0.3,0.3)
-            end
-        end)
-    end
-
-    -- 状态UI（生命+饥饿+群系）
-    local StatusGui = Instance.new("ScreenGui", PlayerGui)
-    local HealthBar = Instance.new("Frame", StatusGui)
-    HealthBar.Size = UDim2.new(0.3,0,0.03,0)
-    HealthBar.Position = UDim2.new(0.05,0,0.02,0)
-    HealthBar.BackgroundColor3 = Color3.new(1,0,0)
-    local HungerBar = Instance.new("Frame", StatusGui)
-    HungerBar.Size = UDim2.new(0.3,0,0.03,0)
-    HungerBar.Position = UDim2.new(0.05,0,0.06,0)
-    HungerBar.BackgroundColor3 = Color3.new(1,0.8,0)
-    local BiomeText = Instance.new("TextLabel", StatusGui)
-    BiomeText.Size = UDim2.new(0.2,0,0.05,0)
-    BiomeText.Position = UDim2.new(0.4,0,0.02,0)
-    BiomeText.BackgroundTransparency = 1
-    BiomeText.TextColor3 = Color3.new(1,1,1)
-    BiomeText.TextScaled = true
-
-    -- 手机端虚拟按钮
-    if UserInputService.TouchEnabled then
-        local MobileGui = Instance.new("ScreenGui", PlayerGui)
-        local AttackBtn = Instance.new("ImageButton", MobileGui)
-        AttackBtn.Size = UDim2.new(0,80,0,80)
-        AttackBtn.Position = UDim2.new(0.85,0,0.8,0)
-        AttackBtn.Image = "rbxassetid://154966469"
-        AttackBtn.BackgroundTransparency = 0.5
-        AttackBtn.MouseButton1Down:Connect(function()
-            local target = Player:GetMouse().Target
-            if target and target.Parent:FindFirstChild("Humanoid") then
-                target.Parent.Humanoid:TakeDamage(ITEMS[LocalData.SelectedSlot].Damage or 1)
-            end
-        end)
-        local PlaceBtn = Instance.new("ImageButton", MobileGui)
-        PlaceBtn.Size = UDim2.new(0,80,0,80)
-        PlaceBtn.Position = UDim2.new(0.75,0,0.7,0)
-        PlaceBtn.Image = "rbxassetid://154966471"
-        PlaceBtn.BackgroundTransparency = 0.5
-        PlaceBtn.MouseButton1Down:Connect(function()
-            local mouse = Player:GetMouse()
-            if mouse.Target then
-                local pos = mouse.Hit.Position + mouse.Hit.Normal
-                local block = Instance.new("Part", Workspace)
-                block.Size = Vector3.new(1,1,1)
-                block.Position = pos
-                block.Anchored = true
-                block.CanCollide = true
-                table.insert(LocalData.PlacedBlocks, block)
-            end
-        end)
-    end
-
-    -- UI更新循环
-    RunService.RenderStepped:Connect(function()
-        -- 更新快捷栏
-        for i = 1,9 do
-            local slot = Hotbar:GetChildren()[i]
-            local item = LocalData.Inventory[i]
-            slot.Image = item.Item.Name == "火把" and "rbxassetid://154966457" or "rbxassetid://154966421"
-            slot.CountText.Text = item.Count > 0 and item.Count or ""
-        end
-        -- 更新状态
-        HealthBar.Size = UDim2.new(0.3 * (Humanoid.Health / Humanoid.MaxHealth), 0, 0.03, 0)
-        HungerBar.Size = UDim2.new(0.3 * (LocalData.Hunger / 20), 0, 0.03, 0)
-        BiomeText.Text = LocalData.CurrentBiome
+-- ========== 存档/读档逻辑 ==========
+local function loadSaveData()
+    local saveObject = PlayerGui:FindFirstChild(CONFIG.SaveKey)
+    if not saveObject then return end
+    local success, data = pcall(function()
+        return HttpService:JSONDecode(saveObject.Value)
     end)
-end
-
--- ########## 生物生成AI | 群系专属+行为逻辑 ##########
-local function SpawnCreatures()
-    local MobFolder = Instance.new("Folder", Workspace)
-    MobFolder.Name = "LocalMobs"
-    MobFolder.Parent = Workspace
-
-    while wait(3) do
-        if #MobFolder:GetChildren() >= CONFIG.MobCap then continue end
-        local playerPos = RootPart.Position
-        local spawnRadius = math.random(30, CONFIG.RenderDistance)
-        local spawnX = playerPos.X + math.random(-spawnRadius, spawnRadius)
-        local spawnZ = playerPos.Z + math.random(-spawnRadius, spawnRadius)
-        local spawnY = Workspace.Terrain:SampleHeight(Vector3.new(spawnX, 0, spawnZ)) + 2
-        local biome = GetBiomeAt(spawnX, spawnZ)
-        LocalData.CurrentBiome = biome.Name
-
-        -- 选择群系专属生物
-        local validMobs = {}
-        for _, mob in ipairs(CREATURES) do
-            for _, b in ipairs(mob.Biome) do
-                if b == biome.Name then
-                    table.insert(validMobs, mob)
-                    break
-                end
-            end
-        end
-        if #validMobs == 0 then continue end
-        local selectedMob = validMobs[math.random(#validMobs)]
-
-        -- 创建生物模型
-        local mobModel = Instance.new("Model", MobFolder)
-        mobModel.Name = selectedMob.Name
-        local mobRoot = Instance.new("Part", mobModel)
-        mobRoot.Name = "HumanoidRootPart"
-        mobRoot.Size = Vector3.new(2,2,2)
-        mobRoot.Position = Vector3.new(spawnX, spawnY, spawnZ)
-        mobRoot.Anchored = false
-        mobModel.PrimaryPart = mobRoot
-        local humanoid = Instance.new("Humanoid", mobModel)
-        humanoid.MaxHealth = selectedMob.Health
-        humanoid.Health = selectedMob.Health
-        humanoid.WalkSpeed = selectedMob.Speed
-        local mesh = Instance.new("SpecialMesh", mobRoot)
-        mesh.MeshType = Enum.MeshType.FileMesh
-        mesh.MeshId = "rbxassetid://154966473" -- 通用模型占位
-        mesh.Scale = Vector3.new(1.5,1.5,1.5)
-
-        -- 生物AI逻辑
-        coroutine.wrap(function()
-            while mobModel and mobModel.Parent do
-                wait(0.5)
-                local dist = (mobRoot.Position - playerPos).Magnitude
-                if selectedMob.Friendly then
-                    -- 友好生物：远离玩家
-                    if dist < 20 then
-                        local dir = (mobRoot.Position - playerPos).Unit
-                        humanoid:MoveTo(mobRoot.Position + dir * 10)
-                    else
-                        -- 随机移动
-                        local randDir = Vector3.new(math.random(-1,1),0,math.random(-1,1)).Unit
-                        humanoid:MoveTo(mobRoot.Position + randDir * math.random(5,10))
-                    end
-                else
-                    -- 敌对生物：追击玩家
-                    if dist < 50 then
-                        humanoid:MoveTo(playerPos)
-                        if dist < 3 then
-                            humanoid:Attack()
-                            Humanoid:TakeDamage(selectedMob.Damage)
-                        end
-                    else
-                        local randDir = Vector3.new(math.random(-1,1),0,math.random(-1,1)).Unit
-                        humanoid:MoveTo(mobRoot.Position + randDir * math.random(5,10))
-                    end
-                end
-                -- BOSS特殊行为：飞天+范围攻击
-                if selectedMob.Boss and selectedMob.Fly then
-                    mobRoot.Position = Vector3.new(mobRoot.Position.X, mobRoot.Position.Y + 0.5, mobRoot.Position.Z)
-                end
-            end
-        end)()
-        table.insert(LocalData.SpawnedMobs, mobModel)
+    if success then
+        aiPersona = data.persona or aiPersona
+        chatHistory = {} -- 历史消息仅内存暂存，如需存档消息可扩展此处
+        print("✅ 加载存档成功")
     end
 end
 
--- ########## 合成+挖矿+生存系统 | 全自动 ##########
-local function SetupGameplay()
-    -- 挖矿逻辑
+local function saveDataToLocal()
+    saveData = {
+        persona = aiPersona
+    }
+    local saveObject = PlayerGui:FindFirstChild(CONFIG.SaveKey) or Instance.new("StringValue")
+    saveObject.Name = CONFIG.SaveKey
+    saveObject.Value = HttpService:JSONEncode(saveData)
+    saveObject.Parent = PlayerGui
+    print("✅ 自动存档完成")
+end
+
+-- 初始化加载存档
+loadSaveData()
+-- 每30秒自动存档
+task.spawn(function()
+    while task.wait(30) do
+        saveDataToLocal()
+    end
+end)
+
+-- ========== UI创建 ==========
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AdvancedAIChatUI"
+ScreenGui.Parent = PlayerGui
+
+-- 主窗口
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = CONFIG.UI_Size
+MainFrame.Position = CONFIG.UI_Position
+MainFrame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+MainFrame.BorderSizePixel = 2
+MainFrame.BorderColor3 = Color3.new(0.3, 0.3, 0.3)
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+-- 标题栏
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 30)
+TitleBar.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+TitleBar.Parent = MainFrame
+
+local TitleText = Instance.new("TextLabel")
+TitleText.Text = "高级AI聊天面板"
+TitleText.Size = UDim2.new(0.6, 0, 1, 0)
+TitleText.Position = UDim2.new(0, 5, 0, 0)
+TitleText.BackgroundTransparency = 1
+TitleText.TextColor3 = Color3.new(1, 1, 1)
+TitleText.TextSize = 16
+TitleText.Parent = TitleBar
+
+-- AI化身模式开关
+local AiModeToggle = Instance.new("TextButton")
+AiModeToggle.Name = "AiModeToggle"
+AiModeToggle.Size = UDim2.new(0.25, 0, 0, 25)
+AiModeToggle.Position = UDim2.new(0.65, 0, 0, 2)
+AiModeToggle.BackgroundColor3 = Color3.new(0.4, 0.1, 0.1)
+AiModeToggle.Text = "AI聊天: 关闭"
+AiModeToggle.TextColor3 = Color3.new(1, 1, 1)
+AiModeToggle.TextSize = 12
+AiModeToggle.Parent = TitleBar
+
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+MinimizeBtn.Position = UDim2.new(1, -30, 0, 0)
+MinimizeBtn.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+MinimizeBtn.Text = "-"
+MinimizeBtn.TextColor3 = Color3.new(1, 1, 1)
+MinimizeBtn.TextSize = 18
+MinimizeBtn.Parent = TitleBar
+
+-- 人设设置区域
+local PersonaFrame = Instance.new("Frame")
+PersonaFrame.Name = "PersonaFrame"
+PersonaFrame.Size = UDim2.new(1, -10, 0, 60)
+PersonaFrame.Position = UDim2.new(0, 5, 0, 35)
+PersonaFrame.BackgroundColor3 = Color3.new(0.15, 0.15, 0.15)
+PersonaFrame.Parent = MainFrame
+
+local PersonaLabel = Instance.new("TextLabel")
+PersonaLabel.Text = "AI人设:"
+PersonaLabel.Size = UDim2.new(1, 0, 0, 20)
+PersonaLabel.BackgroundTransparency = 1
+PersonaLabel.TextColor3 = Color3.new(0.9, 0.9, 0.9)
+PersonaLabel.TextSize = 12
+PersonaLabel.Parent = PersonaFrame
+
+local PersonaInput = Instance.new("TextBox")
+PersonaInput.Name = "PersonaInput"
+PersonaInput.Size = UDim2.new(1, -70, 0, 30)
+PersonaInput.Position = UDim2.new(0, 0, 0, 20)
+PersonaInput.BackgroundColor3 = Color3.new(0.25, 0.25, 0.25)
+PersonaInput.TextColor3 = Color3.new(1, 1, 1)
+PersonaInput.PlaceholderText = "输入AI的人设描述..."
+PersonaInput.PlaceholderColor3 = Color3.new(0.6, 0.6, 0.6)
+PersonaInput.TextSize = 12
+PersonaInput.Text = aiPersona
+PersonaInput.ClearTextOnFocus = false
+PersonaInput.Parent = PersonaFrame
+
+local SavePersonaBtn = Instance.new("TextButton")
+SavePersonaBtn.Name = "SavePersonaBtn"
+SavePersonaBtn.Size = UDim2.new(0, 65, 0, 30)
+SavePersonaBtn.Position = UDim2.new(1, -65, 0, 20)
+SavePersonaBtn.BackgroundColor3 = Color3.new(0.2, 0.5, 0.2)
+SavePersonaBtn.Text = "保存"
+SavePersonaBtn.TextColor3 = Color3.new(1, 1, 1)
+SavePersonaBtn.TextSize = 12
+SavePersonaBtn.Parent = PersonaFrame
+
+-- 聊天区域
+local ChatFrame = Instance.new("ScrollingFrame")
+ChatFrame.Name = "ChatFrame"
+ChatFrame.Size = UDim2.new(1, -10, 1, -165)
+ChatFrame.Position = UDim2.new(0, 5, 0, 100)
+ChatFrame.BackgroundColor3 = Color3.new(0.05, 0.05, 0.05)
+ChatFrame.ScrollBarThickness = 5
+ChatFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ChatFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ChatFrame.Parent = MainFrame
+
+local ChatLayout = Instance.new("UIListLayout")
+ChatLayout.Padding = UDim.new(0, 5)
+ChatLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+ChatLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+ChatLayout.SortOrder = Enum.SortOrder.LayoutOrder
+ChatLayout.Parent = ChatFrame
+
+-- 输入区域
+local InputFrame = Instance.new("Frame")
+InputFrame.Size = UDim2.new(1, -10, 0, 30)
+InputFrame.Position = UDim2.new(0, 5, 1, -35)
+InputFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+InputFrame.Parent = MainFrame
+
+local InputBox = Instance.new("TextBox")
+InputBox.Size = UDim2.new(0.8, 0, 1, 0)
+InputBox.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+InputBox.TextColor3 = Color3.new(1, 1, 1)
+InputBox.PlaceholderText = "输入消息..."
+InputBox.PlaceholderColor3 = Color3.new(0.6, 0.6, 0.6)
+InputBox.TextSize = 14
+InputBox.ClearTextOnFocus = false
+InputBox.Parent = InputFrame
+
+local SendBtn = Instance.new("TextButton")
+SendBtn.Size = UDim2.new(0.2, 0, 1, 0)
+SendBtn.Position = UDim2.new(0.8, 0, 0, 0)
+SendBtn.BackgroundColor3 = Color3.new(0.2, 0.5, 0.8)
+SendBtn.Text = "发送"
+SendBtn.TextColor3 = Color3.new(1, 1, 1)
+SendBtn.TextSize = 14
+SendBtn.Parent = InputFrame
+
+-- ========== AI接口请求 ==========
+local function getFreeAIResponse(userMessage)
+    local apiUrl = "https://api.qingyunke.com/api.php"
+    local params = HttpService:UrlEncode(table.concat({
+        "key=free",
+        "appid=0",
+        "msg=" .. HttpService:UrlEncode(aiPersona .. " || " .. userMessage)
+    }, "&"))
+    local fullUrl = apiUrl .. "?" .. params
+
+    local success, response = pcall(function()
+        return HttpService:GetAsync(fullUrl, true)
+    end)
+    
+    if not success then
+        return "❌ 网络连接失败，请重试"
+    end
+
+    local data = HttpService:JSONDecode(response)
+    if data.result ~= 0 then
+        return "❌ AI暂未响应，请换个问题试试"
+    end
+
+    local reply = string.gsub(data.content, "{br}", "\n")
+    reply = string.sub(reply, 1, CONFIG.MaxReplyLength)
+    return reply ~= "" and reply or "🤔 我还没想好怎么回答~"
+end
+
+-- ========== 聊天消息处理 ==========
+local function addMessage(text, isUser, isAiChat)
+    local messageFrame = Instance.new("Frame")
+    messageFrame.Size = UDim2.new(1, -10, 0, 0)
+    messageFrame.BackgroundTransparency = 1
+    messageFrame.LayoutOrder = #chatHistory + 1
+    messageFrame.Parent = ChatFrame
+
+    local messageLabel = Instance.new("TextLabel")
+    messageLabel.Size = UDim2.new(1, -50, 0, 0)
+    messageLabel.BackgroundTransparency = 1
+    messageLabel.TextColor3 = isUser and Color3.new(0.4, 1, 0.4) or Color3.new(1, 1, 0.6)
+    messageLabel.Text = (isUser and "你: " or isAiChat and "AI化身: " or "AI: ") .. text
+    messageLabel.TextSize = 14
+    messageLabel.TextWrapped = true
+    messageLabel.AutomaticSize = Enum.AutomaticSize.Y
+    messageLabel.Parent = messageFrame
+
+    -- 复制按钮（仅AI消息）
+    if not isUser then
+        local copyBtn = Instance.new("TextButton")
+        copyBtn.Size = UDim2.new(0, 45, 0, 20)
+        copyBtn.Position = UDim2.new(1, -45, 0, 0)
+        copyBtn.BackgroundColor3 = Color3.new(0.3, 0.3, 0.5)
+        copyBtn.Text = "复制"
+        copyBtn.TextColor3 = Color3.new(1, 1, 1)
+        copyBtn.TextSize = 10
+        copyBtn.Parent = messageFrame
+
+        copyBtn.MouseButton1Click:Connect(function()
+            Clipboard:SetText(text)
+            copyBtn.Text = "已复制"
+            task.wait(1)
+            copyBtn.Text = "复制"
+        end)
+    end
+
+    messageFrame.AutomaticSize = Enum.AutomaticSize.Y
+    table.insert(chatHistory, messageFrame)
+    ChatFrame.CanvasPosition = Vector2.new(0, ChatFrame.CanvasSize.Y.Offset)
+end
+
+local function aiTypeReply(text, isAiChat)
+    local messageFrame = Instance.new("Frame")
+    messageFrame.Size = UDim2.new(1, -10, 0, 0)
+    messageFrame.BackgroundTransparency = 1
+    messageFrame.LayoutOrder = #chatHistory + 1
+    messageFrame.Parent = ChatFrame
+
+    local messageLabel = Instance.new("TextLabel")
+    messageLabel.Size = UDim2.new(1, -50, 0, 0)
+    messageLabel.BackgroundTransparency = 1
+    messageLabel.TextColor3 = Color3.new(1, 1, 0.6)
+    messageLabel.Text = isAiChat and "AI化身: " or "AI: "
+    messageLabel.TextSize = 14
+    messageLabel.TextWrapped = true
+    messageLabel.AutomaticSize = Enum.AutomaticSize.Y
+    messageLabel.Parent = messageFrame
+
+    -- 复制按钮
+    local copyBtn = Instance.new("TextButton")
+    copyBtn.Size = UDim2.new(0, 45, 0, 20)
+    copyBtn.Position = UDim2.new(1, -45, 0, 0)
+    copyBtn.BackgroundColor3 = Color3.new(0.3, 0.3, 0.5)
+    copyBtn.Text = "复制"
+    copyBtn.TextColor3 = Color3.new(1, 1, 1)
+    copyBtn.TextSize = 10
+    copyBtn.Parent = messageFrame
+
+    copyBtn.MouseButton1Click:Connect(function()
+        Clipboard:SetText(text)
+        copyBtn.Text = "已复制"
+        task.wait(1)
+        copyBtn.Text = "复制"
+    end)
+
+    for i = 1, #text do
+        messageLabel.Text = messageLabel.Text .. string.sub(text, i, i)
+        ChatFrame.CanvasPosition = Vector2.new(0, ChatFrame.CanvasSize.Y.Offset)
+        task.wait(CONFIG.TypingSpeed)
+    end
+
+    messageFrame.AutomaticSize = Enum.AutomaticSize.Y
+    table.insert(chatHistory, messageFrame)
+end
+
+-- ========== 功能按钮逻辑 ==========
+-- 保存人设
+SavePersonaBtn.MouseButton1Click:Connect(function()
+    if PersonaInput.Text == "" then return end
+    aiPersona = PersonaInput.Text
+    saveDataToLocal()
+    addMessage("✅ AI人设已更新并保存", false, false)
+end)
+
+-- 发送消息
+SendBtn.MouseButton1Click:Connect(function()
+    if isSending or InputBox.Text == "" then return end
+    isSending = true
+    local userText = InputBox.Text
+    InputBox.Text = ""
+    
+    addMessage(userText, true, false)
+    task.spawn(function()
+        local aiReply = getFreeAIResponse(userText)
+        aiTypeReply(aiReply, false)
+        task.wait(CONFIG.Debounce)
+        isSending = false
+    end)
+end)
+
+-- 回车发送
+InputBox.Focused:Connect(function()
     UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            local mouse = Player:GetMouse()
-            local target = mouse.Target
-            if not target then return end
-            local tool = LocalData.Inventory[LocalData.SelectedSlot].Item
-            local miningSpeed = tool.MiningSpeed or 1
-            wait(2 / miningSpeed)
-            -- 破坏方块+掉落物品
-            local pos = target.Position
-            Workspace.Terrain:FillBlock(CFrame.new(pos), Vector3.new(1,1,1), Enum.Material.Air)
-            local dropItem = "石头"
-            if target.Material == Enum.Material.Coal then dropItem = "煤炭" end
-            if target.Material == Enum.Material.Iron then dropItem = "铁矿石" end
-            if target.Material == Enum.Material.Diamond then dropItem = "钻石" end
-            -- 加入背包
-            for _, item in ipairs(LocalData.Inventory) do
-                if item.Item.Name == dropItem then
-                    item.Count += 1
-                    break
-                end
-            end
+        if input.KeyCode == Enum.KeyCode.Return and InputBox:IsFocused() then
+            SendBtn.MouseButton1Click:Fire()
         end
     end)
+end)
 
-    -- 合成逻辑
-    local function CraftItem(recipe)
-        local hasMat = true
-        for _, mat in ipairs(recipe.Ingredients) do
-            local name, count = mat[1], mat[2]
-            local found = false
-            for _, item in ipairs(LocalData.Inventory) do
-                if item.Item.Name == name and item.Count >= count then
-                    found = true
-                    item.Count -= count
-                    break
-                end
-            end
-            if not found then hasMat = false end
-        end
-        if hasMat then
-            for _, item in ipairs(LocalData.Inventory) do
-                if item.Item.Name == recipe.Result then
-                    item.Count += 1
-                    break
-                end
-            end
-        end
-    end
+-- 最小化
+local isMinimized = false
+MinimizeBtn.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    ChatFrame.Visible = not isMinimized
+    InputFrame.Visible = not isMinimized
+    PersonaFrame.Visible = not isMinimized
+    MainFrame.Size = isMinimized and UDim2.new(0.35, 0, 0, 30) or CONFIG.UI_Size
+end)
 
-    -- 工作台交互
-    Player:GetMouse().Button1Down:Connect(function()
-        local target = Player:GetMouse().Target
-        if target and target.Name == "工作台" then
-            for _, recipe in ipairs(CRAFT_RECIPES) do
-                CraftItem(recipe)
-            end
-        end
-    end)
+-- AI化身模式开关
+AiModeToggle.MouseButton1Click:Connect(function()
+    isAiChatMode = not isAiChatMode
+    AiModeToggle.BackgroundColor3 = isAiChatMode and Color3.new(0.1, 0.4, 0.1) or Color3.new(0.4, 0.1, 0.1)
+    AiModeToggle.Text = isAiChatMode and "AI聊天: 开启" or "AI聊天: 关闭"
+    addMessage(isAiChatMode and "🔵 AI化身模式已开启，将自动回复公共聊天" or "🔴 AI化身模式已关闭", false, false)
+end)
 
-    -- 饥饿+口渴系统
-    while wait(10) do
-        LocalData.Hunger = math.max(0, LocalData.Hunger - 1)
-        LocalData.Thirst = math.max(0, LocalData.Thirst - 1)
-        if LocalData.Hunger <= 0 then
-            Humanoid:TakeDamage(1)
-        end
-        -- 吃东西恢复
-        UserInputService.InputBegan:Connect(function(input)
-            if input.KeyCode == Enum.KeyCode.R then
-                local item = LocalData.Inventory[LocalData.SelectedSlot].Item
-                if item.Hunger then
-                    LocalData.Hunger = math.min(20, LocalData.Hunger + item.Hunger)
-                    item.Count -= 1
-                end
-            end
+-- ========== 监听公共聊天并自动回复 ==========
+-- 适配Roblox默认聊天系统
+local function onPlayerChatted(player, message)
+    if not isAiChatMode or player == LocalPlayer then return end
+    if message:sub(1, 1) == "/" then return end -- 忽略指令
+
+    addMessage(player.Name .. ": " .. message, false, false)
+    task.spawn(function()
+        local aiReply = getFreeAIResponse(player.Name .. "说: " .. message)
+        aiTypeReply(aiReply, true)
+        
+        -- 发送到公共聊天栏
+        local success, err = pcall(function()
+            -- 触发Roblox默认聊天（需确保游戏聊天系统正常）
+            local ChatService = require(ReplicatedStorage:FindFirstChild("ChatServiceRunner"):FindFirstChild("ChatService"))
+            local speaker = ChatService:GetSpeaker(LocalPlayer.Name)
+            speaker:SayMessage(aiReply, "All")
         end)
-    end
-end
-
--- ########## 日夜循环+火把照明 ##########
-local function SetupWorldEffects()
-    while wait(1) do
-        Lighting.ClockTime = (Lighting.ClockTime + CONFIG.DayNightSpeed) % 24
-        if Lighting.ClockTime < 6 or Lighting.ClockTime > 18 then
-            Lighting.Ambient = Color3.new(0.1,0.1,0.1)
-            Lighting.FogEnd = 100
-        else
-            Lighting.Ambient = Color3.new(0.8,0.8,0.8)
-            Lighting.FogEnd = 500
-        end
-    end
-
-    -- 火把照明
-    RunService.RenderStepped:Connect(function()
-        for _, block in ipairs(LocalData.PlacedBlocks) do
-            if block.Name == "火把" then
-                local light = block:FindFirstChild("PointLight") or Instance.new("PointLight", block)
-                light.Range = CONFIG.TorchLightRange
-                light.Brightness = 2
-                light.Color = Color3.new(1,0.8,0.2)
-            end
+        if not success then
+            warn("发送公共聊天失败: " .. err)
+            addMessage("❌ 无法发送公共聊天，可能聊天系统未加载", false, false)
         end
     end)
 end
 
--- ########## 初始化启动 | 一键运行 ##########
-local function Init()
-    GenerateTerrain()
-    CreateUI()
-    coroutine.wrap(SpawnCreatures)()
-    coroutine.wrap(SetupGameplay)()
-    coroutine.wrap(SetupWorldEffects)()
-    Humanoid.Died:Connect(function()
-        print("你死亡了！正在重生...")
-        RootPart.CFrame = CFrame.new(0, 60, 0)
-        Humanoid.Health = Humanoid.MaxHealth
-        LocalData.Hunger = 20
-        LocalData.Thirst = 20
+-- 绑定聊天事件
+for _, player in ipairs(Players:GetPlayers()) do
+    player.Chatted:Connect(function(msg)
+        onPlayerChatted(player, msg)
     end)
-    print("=== 我的世界超丰富生存脚本加载完成 ===")
-    print("=== 本地独占 | 手机适配 | 原创内容 ===")
 end
+Players.PlayerAdded:Connect(function(player)
+    player.Chatted:Connect(function(msg)
+        onPlayerChatted(player, msg)
+    end)
+end)
 
--- 启动脚本
-Init()
+print("✅ 高级AI聊天面板加载完成")
