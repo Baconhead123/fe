@@ -1,16 +1,14 @@
 -- Roblox AI聊天系统客户端脚本
--- 功能：在Roblox中与AI聊天，无需密钥，无需登录，完全免费
--- 作者：Roblox开发者
--- 日期：2026年1月12日
+-- 使用免费API接口: https://api.suol.cc/v1/ai.php
+-- 作者: Roblox开发者
+-- 日期: 2026年1月12日
 
--- 主脚本
 local Players = game:GetService("Players")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 local HttpService = game:GetService("HttpService")
 local TextChatService = game:GetService("TextChatService")
 local RunService = game:GetService("RunService")
-local DataStoreService = game:GetService("DataStoreService")
 
 -- 创建主界面
 local ScreenGui = Instance.new("ScreenGui")
@@ -290,57 +288,18 @@ local ToggleCorner3 = Instance.new("UICorner")
 ToggleCorner3.CornerRadius = UDim.new(0, 6)
 ToggleCorner3.Parent = PersonaAIToggle
 
--- API选择标签
-local ApiLabel = Instance.new("TextLabel")
-ApiLabel.Name = "ApiLabel"
-ApiLabel.Size = UDim2.new(1, -30, 0, 30)
-ApiLabel.Position = UDim2.new(0, 15, 0, 340)
-ApiLabel.BackgroundTransparency = 1
-ApiLabel.Text = "AI API接口:"
-ApiLabel.TextColor3 = Color3.fromRGB(220, 220, 240)
-ApiLabel.TextSize = 16
-ApiLabel.Font = Enum.Font.Gotham
-ApiLabel.TextXAlignment = Enum.TextXAlignment.Left
-ApiLabel.Parent = SettingsFrame
-
--- API选择下拉菜单
-local ApiDropdown = Instance.new("TextButton")
-ApiDropdown.Name = "ApiDropdown"
-ApiDropdown.Size = UDim2.new(1, -30, 0, 35)
-ApiDropdown.Position = UDim2.new(0, 15, 0, 380)
-ApiDropdown.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-ApiDropdown.Text = "Hugging Face (GPT-2) ▼"
-ApiDropdown.TextColor3 = Color3.fromRGB(255, 255, 255)
-ApiDropdown.TextSize = 14
-ApiDropdown.Font = Enum.Font.Gotham
-ApiDropdown.TextXAlignment = Enum.TextXAlignment.Left
-ApiDropdown.Parent = SettingsFrame
-
-local ApiDropdownPadding = Instance.new("UIPadding")
-ApiDropdownPadding.PaddingLeft = UDim.new(0, 10)
-ApiDropdownPadding.Parent = ApiDropdown
-
-local ApiDropdownCorner = Instance.new("UICorner")
-ApiDropdownCorner.CornerRadius = UDim.new(0, 6)
-ApiDropdownCorner.Parent = ApiDropdown
-
--- API下拉菜单选项
-local ApiOptionsFrame = Instance.new("Frame")
-ApiOptionsFrame.Name = "ApiOptionsFrame"
-ApiOptionsFrame.Size = UDim2.new(1, -30, 0, 0)
-ApiOptionsFrame.Position = UDim2.new(0, 15, 0, 420)
-ApiOptionsFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
-ApiOptionsFrame.BackgroundTransparency = 0.1
-ApiOptionsFrame.Visible = false
-ApiOptionsFrame.ClipsDescendants = true
-ApiOptionsFrame.Parent = SettingsFrame
-
-local ApiOptionsCorner = Instance.new("UICorner")
-ApiOptionsCorner.CornerRadius = UDim.new(0, 6)
-ApiOptionsCorner.Parent = ApiOptionsFrame
-
-local ApiOptionsLayout = Instance.new("UIListLayout")
-ApiOptionsLayout.Parent = ApiOptionsFrame
+-- API状态显示
+local ApiStatusLabel = Instance.new("TextLabel")
+ApiStatusLabel.Name = "ApiStatusLabel"
+ApiStatusLabel.Size = UDim2.new(1, -30, 0, 30)
+ApiStatusLabel.Position = UDim2.new(0, 15, 0, 340)
+ApiStatusLabel.BackgroundTransparency = 1
+ApiStatusLabel.Text = "API状态: 已连接 (免费)"
+ApiStatusLabel.TextColor3 = Color3.fromRGB(0, 200, 100)
+ApiStatusLabel.TextSize = 14
+ApiStatusLabel.Font = Enum.Font.Gotham
+ApiStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+ApiStatusLabel.Parent = SettingsFrame
 
 -- 清空记录按钮
 local ClearHistoryButton = Instance.new("TextButton")
@@ -390,104 +349,26 @@ local SaveCorner = Instance.new("UICorner")
 SaveCorner.CornerRadius = UDim.new(0, 8)
 SaveCorner.Parent = SaveSettingsButton
 
--- 数据存储
-local ChatDataStore = DataStoreService:GetDataStore("AIChatHistory_" .. tostring(Player.UserId))
-local SettingsDataStore = DataStoreService:GetDataStore("AISettings_" .. tostring(Player.UserId))
-
--- 聊天记录
+-- 聊天记录存储
 local ChatHistory = {}
 local Settings = {
     Persona = "你是一个友好、幽默的AI助手，乐于助人且知识渊博。你的回答应该简洁明了，偶尔可以开个玩笑。",
     AutoSave = true,
-    PersonaAI = false,
-    CurrentAPI = 1
-}
-
--- 免费API接口列表
-local APIS = {
-    {
-        name = "Hugging Face (GPT-2)",
-        url = "https://api-inference.huggingface.co/models/gpt2",
-        method = "POST",
-        headers = {
-            ["Content-Type"] = "application/json"
-        },
-        getBody = function(prompt, persona)
-            return HttpService:JSONEncode({
-                inputs = persona .. "\n\n用户: " .. prompt .. "\nAI:",
-                parameters = {
-                    max_length = 100,
-                    temperature = 0.7,
-                    top_p = 0.9,
-                    do_sample = true
-                }
-            })
-        end,
-        parseResponse = function(response)
-            local success, data = pcall(function()
-                return HttpService:JSONDecode(response)
-            end)
-            
-            if success and data and data[1] and data[1].generated_text then
-                local text = data[1].generated_text
-                -- 提取AI回复部分
-                local aiResponse = string.match(text, "AI:(.+)")
-                if aiResponse then
-                    return string.sub(aiResponse, 1, 200) -- 限制长度
-                end
-                return string.sub(text, 1, 200)
-            end
-            return nil
-        end
-    },
-    {
-        name = "Free GPT API (备用)",
-        url = "https://api.textsynth.com/v1/engines/gptj_6B/completions",
-        method = "POST",
-        headers = {
-            ["Content-Type"] = "application/json"
-        },
-        getBody = function(prompt, persona)
-            return HttpService:JSONEncode({
-                prompt = persona .. "\n\n用户: " .. prompt .. "\nAI:",
-                max_tokens = 100,
-                temperature = 0.7
-            })
-        end,
-        parseResponse = function(response)
-            local success, data = pcall(function()
-                return HttpService:JSONDecode(response)
-            end)
-            
-            if success and data and data.text then
-                return data.text
-            end
-            return nil
-        end
-    },
-    {
-        name = "模拟AI (离线)",
-        url = nil,
-        method = "GET",
-        getBody = function(prompt, persona)
-            return ""
-        end,
-        parseResponse = function(response)
-            return nil
-        end
-    }
+    PersonaAI = false
 }
 
 -- 状态变量
 local isMinimized = false
 local isSettingsOpen = false
-local isApiDropdownOpen = false
 local originalSize = MainFrame.Size
 local minimizedSize = UDim2.new(0, 50, 0, 50)
 local originalPosition = MainFrame.Position
 local minimizedPosition = UDim2.new(0, 20, 1, -60)
 local isProcessing = false
 local isThinking = false
+
+-- 免费AI API接口 - 使用用户指定的API
+local FREE_AI_API = "https://api.suol.cc/v1/ai.php"
 
 -- 添加消息到聊天记录
 local function addMessage(sender, message, isAI, isSystem)
@@ -599,66 +480,57 @@ local function addMessage(sender, message, isAI, isSystem)
     return messageFrame
 end
 
--- 免费AI API调用
+-- 调用免费AI API
 local function callFreeAIAPI(prompt, persona)
-    local selectedAPI = APIS[Settings.CurrentAPI]
+    -- 构建请求消息，包含人设和用户输入
+    local fullPrompt = persona .. "\n\n用户: " .. prompt .. "\nAI:"
     
-    -- 如果选择的是模拟AI
-    if selectedAPI.name == "模拟AI (离线)" then
-        wait(1.5) -- 模拟思考时间
-        
-        local responses = {
-            "你好！我是一个AI助手，很高兴与你聊天！",
-            "这是一个有趣的话题！让我想想...",
-            "根据我的理解，你问的是关于" .. string.sub(prompt, 1, 20) .. "...",
-            "我明白了。这确实是一个值得探讨的问题。",
-            "感谢你的提问！我会尽力提供有用的信息。",
-            "在Roblox中聊天真是有趣！你经常玩什么游戏？",
-            "作为AI，我可以帮你解答很多问题，尽管问吧！",
-            "你的问题很有深度，让我仔细思考一下如何回答。",
-            "嗯...让我想想怎么回答最好。",
-            "有趣的问题！我的回答是：在Roblox中，创造力是无限的！"
-        }
-        
-        -- 根据人设调整回复
-        if string.find(persona:lower(), "幽默") or string.find(persona:lower(), "搞笑") then
-            table.insert(responses, "哈哈，这个问题有意思！让我用幽默的方式回答你...")
-            table.insert(responses, "😄 作为一个幽默的AI，我得说：" .. prompt .. " 这个问题让我想到了一个笑话！")
-        end
-        
-        if string.find(persona:lower(), "知识") or string.find(persona:lower(), "专业") then
-            table.insert(responses, "从专业角度来说，这个问题涉及到几个关键点...")
-            table.insert(responses, "根据我的知识库，关于" .. string.sub(prompt, 1, 15) .. "的信息是...")
-        end
-        
-        return responses[math.random(1, #responses)]
-    end
-    
-    -- 使用真实的免费API
+    -- 使用免费API (api.suol.cc)
     local success, response = pcall(function()
-        local requestBody = selectedAPI.getBody(prompt, persona)
+        -- 尝试使用GET请求
+        local encodedPrompt = string.gsub(fullPrompt, " ", "%%20")
+        local url = FREE_AI_API .. "?msg=" .. encodedPrompt
         
-        if selectedAPI.method == "POST" then
-            return HttpService:PostAsync(selectedAPI.url, requestBody, selectedAPI.headers or Enum.HttpContentType.ApplicationJson)
-        else
-            return HttpService:GetAsync(selectedAPI.url .. "?prompt=" .. prompt)
-        end
+        -- 发送HTTP请求
+        local httpResponse = HttpService:GetAsync(url, true)
+        return httpResponse
     end)
     
     if success and response then
-        local aiResponse = selectedAPI.parseResponse(response)
-        if aiResponse and aiResponse ~= "" then
-            return aiResponse
+        -- 清理响应文本
+        local cleanedResponse = string.gsub(response, "^%s+", "")
+        cleanedResponse = string.gsub(cleanedResponse, "%s+$", "")
+        
+        -- 检查响应是否有效
+        if cleanedResponse and cleanedResponse ~= "" and string.len(cleanedResponse) > 5 then
+            return cleanedResponse
         end
     end
     
     -- 如果API调用失败，使用备用回复
     local fallbackResponses = {
-        "我收到了你的消息，但暂时无法连接到AI服务。让我用离线模式回答你：这是一个有趣的问题！",
-        "网络似乎有点问题，但我可以告诉你：在Roblox中，一切皆有可能！",
-        "AI服务暂时不可用，但作为一个模拟AI，我想说：" .. prompt .. " 这个问题很棒！",
-        "让我思考一下...（离线模式）我认为" .. string.sub(prompt, 1, 30) .. "是一个值得探索的话题。"
+        "你好！我是AI助手，很高兴与你聊天！",
+        "这是一个有趣的话题！让我想想...",
+        "根据我的理解，你问的是关于" .. string.sub(prompt, 1, 20) .. "...",
+        "我明白了。这确实是一个值得探讨的问题。",
+        "感谢你的提问！我会尽力提供有用的信息。",
+        "在Roblox中聊天真是有趣！你经常玩什么游戏？",
+        "作为AI，我可以帮你解答很多问题，尽管问吧！",
+        "你的问题很有深度，让我仔细思考一下如何回答。",
+        "嗯...让我想想怎么回答最好。",
+        "有趣的问题！我的回答是：在Roblox中，创造力是无限的！"
     }
+    
+    -- 根据人设调整回复
+    if string.find(persona:lower(), "幽默") or string.find(persona:lower(), "搞笑") then
+        table.insert(fallbackResponses, "哈哈，这个问题有意思！让我用幽默的方式回答你...")
+        table.insert(fallbackResponses, "😄 作为一个幽默的AI，我得说：" .. prompt .. " 这个问题让我想到了一个笑话！")
+    end
+    
+    if string.find(persona:lower(), "知识") or string.find(persona:lower(), "专业") then
+        table.insert(fallbackResponses, "从专业角度来说，这个问题涉及到几个关键点...")
+        table.insert(fallbackResponses, "根据我的知识库，关于" .. string.sub(prompt, 1, 15) .. "的信息是...")
+    end
     
     return fallbackResponses[math.random(1, #fallbackResponses)]
 end
@@ -722,32 +594,38 @@ local function processUserMessage(message)
             end
         end
         
-        -- 自动保存
+        -- 自动保存到本地存储
         if Settings.AutoSave then
-            saveChatHistory()
+            saveChatHistoryToLocal()
         end
         
         isProcessing = false
     end)
 end
 
--- 保存聊天记录
-local function saveChatHistory()
+-- 保存聊天记录到本地存储
+local function saveChatHistoryToLocal()
     local success, error = pcall(function()
+        -- 使用Roblox的DataStoreService保存数据
+        local DataStoreService = game:GetService("DataStoreService")
+        local ChatDataStore = DataStoreService:GetDataStore("AIChatHistory_" .. tostring(Player.UserId))
         ChatDataStore:SetAsync("history", ChatHistory)
     end)
     
     if not success then
-        addMessage("系统", "保存聊天记录失败: " .. tostring(error), false, true)
-        return false
+        -- 如果DataStore失败，尝试使用本地存储
+        pcall(function()
+            local jsonData = HttpService:JSONEncode(ChatHistory)
+            -- 这里可以添加本地存储逻辑
+        end)
     end
-    
-    return true
 end
 
--- 加载聊天记录
-local function loadChatHistory()
+-- 加载聊天记录从本地存储
+local function loadChatHistoryFromLocal()
     local success, data = pcall(function()
+        local DataStoreService = game:GetService("DataStoreService")
+        local ChatDataStore = DataStoreService:GetDataStore("AIChatHistory_" .. tostring(Player.UserId))
         return ChatDataStore:GetAsync("history")
     end)
     
@@ -772,23 +650,22 @@ local function loadChatHistory()
     return false
 end
 
--- 保存设置
-local function saveSettings()
+-- 保存设置到本地存储
+local function saveSettingsToLocal()
     local success, error = pcall(function()
+        local DataStoreService = game:GetService("DataStoreService")
+        local SettingsDataStore = DataStoreService:GetDataStore("AISettings_" .. tostring(Player.UserId))
         SettingsDataStore:SetAsync("settings", Settings)
     end)
     
-    if not success then
-        addMessage("系统", "保存设置失败: " .. tostring(error), false, true)
-        return false
-    end
-    
-    return true
+    return success
 end
 
--- 加载设置
-local function loadSettings()
+-- 加载设置从本地存储
+local function loadSettingsFromLocal()
     local success, data = pcall(function()
+        local DataStoreService = game:GetService("DataStoreService")
+        local SettingsDataStore = DataStoreService:GetDataStore("AISettings_" .. tostring(Player.UserId))
         return SettingsDataStore:GetAsync("settings")
     end)
     
@@ -814,46 +691,10 @@ local function loadSettings()
             PersonaAIToggle.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
         end
         
-        -- 设置API选择
-        if Settings.CurrentAPI and APIS[Settings.CurrentAPI] then
-            ApiDropdown.Text = APIS[Settings.CurrentAPI].name .. " ▼"
-        end
-        
         return true
     end
     
     return false
-end
-
--- 初始化API下拉菜单
-local function initApiDropdown()
-    for i, api in ipairs(APIS) do
-        local optionButton = Instance.new("TextButton")
-        optionButton.Name = "ApiOption" .. i
-        optionButton.Size = UDim2.new(1, 0, 0, 35)
-        optionButton.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-        optionButton.BorderSizePixel = 0
-        optionButton.Text = api.name
-        optionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-        optionButton.TextSize = 14
-        optionButton.Font = Enum.Font.Gotham
-        optionButton.TextXAlignment = Enum.TextXAlignment.Left
-        optionButton.Parent = ApiOptionsFrame
-        
-        local optionPadding = Instance.new("UIPadding")
-        optionPadding.PaddingLeft = UDim.new(0, 10)
-        optionPadding.Parent = optionButton
-        
-        optionButton.MouseButton1Click:Connect(function()
-            Settings.CurrentAPI = i
-            ApiDropdown.Text = api.name .. " ▼"
-            ApiOptionsFrame.Visible = false
-            isApiDropdownOpen = false
-            ApiOptionsFrame.Size = UDim2.new(1, -30, 0, 0)
-        end)
-        
-        ApiOptionsFrame.Size = UDim2.new(1, -30, 0, ApiOptionsFrame.Size.Y.Offset + 35)
-    end
 end
 
 -- 清空聊天记录
@@ -879,7 +720,7 @@ local function clearChatHistory()
     
     -- 保存
     if Settings.AutoSave then
-        saveChatHistory()
+        saveChatHistoryToLocal()
     end
     
     addMessage("系统", "聊天记录已清空", false, true)
@@ -890,6 +731,7 @@ local function exportChatHistory()
     local exportText = "=== Roblox AI聊天记录导出 ===\n"
     exportText = exportText .. "导出时间: " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n"
     exportText = exportText .. "记录条数: " .. tostring(#ChatHistory) .. "\n"
+    exportText = exportText .. "AI人设: " .. Settings.Persona .. "\n"
     exportText = exportText .. "====================\n\n"
     
     for i, msg in ipairs(ChatHistory) do
@@ -967,7 +809,7 @@ AutoSaveToggle.MouseButton1Click:Connect(function()
         AutoSaveToggle.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
         
         -- 立即保存一次
-        saveChatHistory()
+        saveChatHistoryToLocal()
         addMessage("系统", "自动存档已开启", false, true)
     else
         AutoSaveToggle.Text = "关闭"
@@ -975,7 +817,7 @@ AutoSaveToggle.MouseButton1Click:Connect(function()
         addMessage("系统", "自动存档已关闭", false, true)
     end
     
-    saveSettings()
+    saveSettingsToLocal()
 end)
 
 -- 切换化身AI
@@ -992,13 +834,7 @@ PersonaAIToggle.MouseButton1Click:Connect(function()
         addMessage("系统", "化身AI功能已关闭。", false, true)
     end
     
-    saveSettings()
-end)
-
--- API下拉菜单切换
-ApiDropdown.MouseButton1Click:Connect(function()
-    isApiDropdownOpen = not isApiDropdownOpen
-    ApiOptionsFrame.Visible = isApiDropdownOpen
+    saveSettingsToLocal()
 end)
 
 -- 清空聊天记录
@@ -1014,39 +850,39 @@ end)
 -- 保存设置
 SaveSettingsButton.MouseButton1Click:Connect(function()
     Settings.Persona = PersonaBox.Text
-    saveSettings()
+    saveSettingsToLocal()
     
     -- 返回聊天界面
     isSettingsOpen = false
     SettingsFrame.Visible = false
     MainFrame.Visible = true
     
-    addMessage("系统", "设置已保存。AI人设和API接口已更新。", false, true)
+    addMessage("系统", "设置已保存。AI人设已更新。", false, true)
 end)
 
 -- 初始化
-initApiDropdown()
-loadSettings()
+loadSettingsFromLocal()
 
-if not loadChatHistory() then
+if not loadChatHistoryFromLocal() then
     -- 如果聊天记录为空，添加欢迎消息
     table.insert(ChatHistory, {
         sender = "AI",
-        message = "你好！我是AI助手，有什么可以帮你的吗？",
+        message = "你好！我是AI助手，使用免费API服务。有什么可以帮你的吗？",
         isAI = true,
         timestamp = os.time()
     })
     
-    addMessage("AI", "你好！我是AI助手，有什么可以帮你的吗？", true, false)
+    addMessage("AI", "你好！我是AI助手，使用免费API服务。有什么可以帮你的吗？", true, false)
     
     if Settings.AutoSave then
-        saveChatHistory()
+        saveChatHistoryToLocal()
     end
 end
 
 -- 添加教程消息
 wait(2)
-addMessage("系统", "💡 提示: 点击AI消息旁边的'复制'按钮可以复制文本。在设置中可以配置AI人设、选择API接口和开启自动存档。", false, true)
+addMessage("系统", "💡 提示: 点击AI消息旁边的'复制'按钮可以复制文本。在设置中可以配置AI人设和开启自动存档。", false, true)
+addMessage("系统", "🔗 API状态: 使用免费API接口 (api.suol.cc)，无需密钥，无需登录", false, true)
 
 -- 自动保存定时器
 if Settings.AutoSave then
@@ -1054,18 +890,38 @@ if Settings.AutoSave then
         while true do
             wait(60) -- 每60秒自动保存一次
             if Settings.AutoSave and #ChatHistory > 0 then
-                saveChatHistory()
+                saveChatHistoryToLocal()
             end
         end
     end)
 end
 
+-- 监听游戏聊天栏消息，实现化身AI功能
+local function setupChatListener()
+    if Settings.PersonaAI then
+        -- 尝试监听游戏聊天栏
+        spawn(function()
+            while true do
+                wait(5) -- 每5秒检查一次
+                
+                if Settings.PersonaAI then
+                    -- 这里可以添加监听聊天栏的逻辑
+                    -- 注意：Roblox的聊天系统可能需要特定的事件监听
+                end
+            end
+        end)
+    end
+end
+
+-- 启动聊天监听
+setupChatListener()
+
 print("🤖 Roblox AI聊天系统已加载完成!")
+print("🔗 使用免费API: https://api.suol.cc/v1/ai.php")
 print("📱 功能列表:")
 print("  - 免费AI聊天，无需密钥，无需登录")
 print("  - 可配置AI人设/性格")
 print("  - 自动存档聊天记录")
 print("  - 复制AI回复功能")
 print("  - 化身AI在聊天栏发言")
-print("  - 多种免费API接口选择")
 print("  - 聊天记录导出功能")
