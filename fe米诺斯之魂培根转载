@@ -1,287 +1,339 @@
--- AI聊天系统客户端脚本
--- 放在StarterGui或PlayerGui中
+-- 高级智能AI聊天系统 - 现代化版
+-- 完全客户端本地运行，无需HTTP请求
 
 local Players = game:GetService("Players")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TextChatService = game:GetService("TextChatService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local StarterGui = game:GetService("StarterGui")
+local HttpService = game:GetService("HttpService")
 
--- 创建主UI
+-- 检查TextChatService是否可用
+local hasTextChat = pcall(function() return TextChatService.TextChannels.RBXGeneral end)
+
+-- ==================== 现代化UI设计 ====================
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "AIChatUI"
+ScreenGui.Name = "SmartAIChatUI"
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.ResetOnSpawn = false
+ScreenGui.DisplayOrder = 100
 
+-- 主框架 - 紧凑设计
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 400, 0, 500)
-MainFrame.Position = UDim2.new(0.5, -200, 0.5, -250)
-MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+MainFrame.Size = UDim2.new(0, 450, 0, 550)
+MainFrame.Position = UDim2.new(0.5, -225, 0.5, -275)
+MainFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+MainFrame.BackgroundTransparency = 0.05
 MainFrame.BorderSizePixel = 0
 MainFrame.ClipsDescendants = true
+MainFrame.Visible = false
+
+-- 圆角
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 12)
+UICorner.Parent = MainFrame
+
+-- 阴影
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Color = Color3.fromRGB(220, 220, 220)
+UIStroke.Thickness = 2
+UIStroke.Parent = MainFrame
 
 -- 标题栏（可拖动）
 local TitleBar = Instance.new("Frame")
 TitleBar.Name = "TitleBar"
-TitleBar.Size = UDim2.new(1, 0, 0, 30)
-TitleBar.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+TitleBar.Size = UDim2.new(1, 0, 0, 40)
+TitleBar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 TitleBar.BorderSizePixel = 0
+TitleBar.ZIndex = 2
+
+local TitleBarCorner = Instance.new("UICorner")
+TitleBarCorner.CornerRadius = UDim.new(0, 12)
+TitleBarCorner.Parent = TitleBar
 
 local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Name = "TitleLabel"
-TitleLabel.Size = UDim2.new(1, -60, 1, 0)
-TitleLabel.Position = UDim2.new(0, 10, 0, 0)
+TitleLabel.Size = UDim2.new(0.5, 0, 1, 0)
+TitleLabel.Position = UDim2.new(0, 15, 0, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "AI助手"
-TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-TitleLabel.TextSize = 14
-TitleLabel.Font = Enum.Font.Gotham
+TitleLabel.Text = "🤖 AI智能助手"
+TitleLabel.TextColor3 = Color3.fromRGB(30, 30, 30)
+TitleLabel.TextSize = 16
+TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 -- 控制按钮
-local MinimizeButton = Instance.new("TextButton")
+local MinimizeButton = Instance.new("ImageButton")
 MinimizeButton.Name = "MinimizeButton"
 MinimizeButton.Size = UDim2.new(0, 30, 0, 30)
-MinimizeButton.Position = UDim2.new(1, -60, 0, 0)
+MinimizeButton.Position = UDim2.new(1, -80, 0, 5)
 MinimizeButton.BackgroundTransparency = 1
-MinimizeButton.Text = "_"
-MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinimizeButton.TextSize = 16
+MinimizeButton.Image = "rbxassetid://3926305904"
+MinimizeButton.ImageRectOffset = Vector2.new(844, 404)
+MinimizeButton.ImageRectSize = Vector2.new(36, 36)
+MinimizeButton.ImageColor3 = Color3.fromRGB(100, 100, 100)
 
-local CloseButton = Instance.new("TextButton")
+local CloseButton = Instance.new("ImageButton")
 CloseButton.Name = "CloseButton"
 CloseButton.Size = UDim2.new(0, 30, 0, 30)
-CloseButton.Position = UDim2.new(1, -30, 0, 0)
+CloseButton.Position = UDim2.new(1, -40, 0, 5)
 CloseButton.BackgroundTransparency = 1
-CloseButton.Text = "×"
-CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseButton.TextSize = 20
+CloseButton.Image = "rbxassetid://3926305904"
+CloseButton.ImageRectOffset = Vector2.new(284, 4)
+CloseButton.ImageRectSize = Vector2.new(24, 24)
+CloseButton.ImageColor3 = Color3.fromRGB(100, 100, 100)
 
 -- 聊天记录框
+local ChatContainer = Instance.new("Frame")
+ChatContainer.Name = "ChatContainer"
+ChatContainer.Size = UDim2.new(1, -20, 1, -150)
+ChatContainer.Position = UDim2.new(0, 10, 0, 50)
+ChatContainer.BackgroundTransparency = 1
+
 local ChatScroll = Instance.new("ScrollingFrame")
 ChatScroll.Name = "ChatScroll"
-ChatScroll.Size = UDim2.new(1, -20, 1, -120)
-ChatScroll.Position = UDim2.new(0, 10, 0, 40)
+ChatScroll.Size = UDim2.new(1, 0, 1, 0)
 ChatScroll.BackgroundTransparency = 1
+ChatScroll.ScrollBarImageColor3 = Color3.fromRGB(200, 200, 200)
 ChatScroll.ScrollBarThickness = 6
 ChatScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 ChatScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 
 local ChatLayout = Instance.new("UIListLayout")
 ChatLayout.Name = "ChatLayout"
-ChatLayout.Padding = UDim.new(0, 10)
+ChatLayout.Padding = UDim.new(0, 12)
+ChatLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+ChatLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local ChatPadding = Instance.new("UIPadding")
+ChatPadding.Name = "ChatPadding"
+ChatPadding.PaddingTop = UDim.new(0, 10)
+ChatPadding.PaddingBottom = UDim.new(0, 10)
 
 -- 输入区域
-local InputFrame = Instance.new("Frame")
-InputFrame.Name = "InputFrame"
-InputFrame.Size = UDim2.new(1, -20, 0, 50)
-InputFrame.Position = UDim2.new(0, 10, 1, -60)
-InputFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-InputFrame.BorderSizePixel = 0
+local InputContainer = Instance.new("Frame")
+InputContainer.Name = "InputContainer"
+InputContainer.Size = UDim2.new(1, -20, 0, 60)
+InputContainer.Position = UDim2.new(0, 10, 1, -70)
+InputContainer.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+InputContainer.BorderSizePixel = 0
+
+local InputCorner = Instance.new("UICorner")
+InputCorner.CornerRadius = UDim.new(0, 10)
+InputCorner.Parent = InputContainer
 
 local InputBox = Instance.new("TextBox")
 InputBox.Name = "InputBox"
-InputBox.Size = UDim2.new(1, -80, 1, -10)
+InputBox.Size = UDim2.new(1, -90, 1, -10)
 InputBox.Position = UDim2.new(0, 10, 0, 5)
-InputBox.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-InputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+InputBox.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+InputBox.TextColor3 = Color3.fromRGB(30, 30, 30)
 InputBox.TextSize = 14
 InputBox.Font = Enum.Font.Gotham
-InputBox.PlaceholderText = "输入消息..."
+InputBox.PlaceholderText = "输入你的问题..."
+InputBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
 InputBox.ClearTextOnFocus = false
+InputBox.TextXAlignment = Enum.TextXAlignment.Left
+
+local InputStroke = Instance.new("UIStroke")
+InputStroke.Color = Color3.fromRGB(220, 220, 220)
+InputStroke.Thickness = 1
+InputStroke.Parent = InputBox
+
+local InputCorner2 = Instance.new("UICorner")
+InputCorner2.CornerRadius = UDim.new(0, 8)
+InputCorner2.Parent = InputBox
 
 local SendButton = Instance.new("TextButton")
 SendButton.Name = "SendButton"
-SendButton.Size = UDim2.new(0, 60, 1, -10)
-SendButton.Position = UDim2.new(1, -70, 0, 5)
-SendButton.BackgroundColor3 = Color3.fromRGB(80, 120, 200)
+SendButton.Size = UDim2.new(0, 70, 1, -10)
+SendButton.Position = UDim2.new(1, -80, 0, 5)
+SendButton.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
 SendButton.Text = "发送"
 SendButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 SendButton.TextSize = 14
+SendButton.Font = Enum.Font.GothamBold
+SendButton.AutoButtonColor = true
+
+local SendButtonCorner = Instance.new("UICorner")
+SendButtonCorner.CornerRadius = UDim.new(0, 8)
+SendButtonCorner.Parent = SendButton
 
 -- 底部控制栏
-local BottomBar = Instance.new("Frame")
-BottomBar.Name = "BottomBar"
-BottomBar.Size = UDim2.new(1, 0, 0, 30)
-BottomBar.Position = UDim2.new(0, 0, 1, -30)
-BottomBar.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-
-local SettingsButton = Instance.new("TextButton")
-SettingsButton.Name = "SettingsButton"
-SettingsButton.Size = UDim2.new(0, 60, 1, 0)
-SettingsButton.Position = UDim2.new(0, 10, 0, 0)
-SettingsButton.BackgroundTransparency = 1
-SettingsButton.Text = "设置"
-SettingsButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+local ControlBar = Instance.new("Frame")
+ControlBar.Name = "ControlBar"
+ControlBar.Size = UDim2.new(1, 0, 0, 50)
+ControlBar.Position = UDim2.new(0, 0, 1, -50)
+ControlBar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+ControlBar.BorderSizePixel = 0
 
 local PersonaButton = Instance.new("TextButton")
 PersonaButton.Name = "PersonaButton"
-PersonaButton.Size = UDim2.new(0, 100, 1, 0)
-PersonaButton.Position = UDim2.new(0.5, -50, 0, 0)
-PersonaButton.BackgroundTransparency = 1
-PersonaButton.Text = "AI人设: 助手"
-PersonaButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+PersonaButton.Size = UDim2.new(0, 100, 0, 30)
+PersonaButton.Position = UDim2.new(0, 15, 0, 10)
+PersonaButton.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
+PersonaButton.TextColor3 = Color3.fromRGB(0, 120, 215)
+PersonaButton.Text = "🧠 助手模式"
+PersonaButton.TextSize = 12
+PersonaButton.Font = Enum.Font.Gotham
 
-local AiModeButton = Instance.new("TextButton")
-AiModeButton.Name = "AiModeButton"
-AiModeButton.Size = UDim2.new(0, 100, 1, 0)
-AiModeButton.Position = UDim2.new(1, -110, 0, 0)
-AiModeButton.BackgroundTransparency = 1
-AiModeButton.Text = "AI模式: 关"
-AiModeButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+local PersonaCorner = Instance.new("UICorner")
+PersonaCorner.CornerRadius = UDim.new(0, 6)
+PersonaCorner.Parent = PersonaButton
 
--- 设置面板
-local SettingsFrame = Instance.new("Frame")
-SettingsFrame.Name = "SettingsFrame"
-SettingsFrame.Size = UDim2.new(0, 300, 0, 300)
-SettingsFrame.Position = UDim2.new(0.5, -150, 0.5, -150)
-SettingsFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-SettingsFrame.BorderSizePixel = 0
-SettingsFrame.Visible = false
+local AIButton = Instance.new("TextButton")
+AIButton.Name = "AIButton"
+AIButton.Size = UDim2.new(0, 100, 0, 30)
+AIButton.Position = UDim2.new(0.5, -50, 0, 10)
+AIButton.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
+AIButton.TextColor3 = Color3.fromRGB(0, 120, 215)
+AIButton.Text = "🤖 化身AI: 关闭"
+AIButton.TextSize = 12
+AIButton.Font = Enum.Font.Gotham
+
+local AICorner = Instance.new("UICorner")
+AICorner.CornerRadius = UDim.new(0, 6)
+AICorner.Parent = AIButton
+
+local ClearButton = Instance.new("TextButton")
+ClearButton.Name = "ClearButton"
+ClearButton.Size = UDim2.new(0, 30, 0, 30)
+ClearButton.Position = UDim2.new(1, -50, 0, 10)
+ClearButton.BackgroundTransparency = 1
+ClearButton.Text = "🗑️"
+ClearButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+ClearButton.TextSize = 18
+ClearButton.Font = Enum.Font.Gotham
 
 -- 组装UI
 TitleBar.Parent = MainFrame
 TitleLabel.Parent = TitleBar
 MinimizeButton.Parent = TitleBar
 CloseButton.Parent = TitleBar
-ChatScroll.Parent = MainFrame
+ChatContainer.Parent = MainFrame
+ChatScroll.Parent = ChatContainer
 ChatLayout.Parent = ChatScroll
-InputFrame.Parent = MainFrame
-InputBox.Parent = InputFrame
-SendButton.Parent = InputFrame
-BottomBar.Parent = MainFrame
-SettingsButton.Parent = BottomBar
-PersonaButton.Parent = BottomBar
-AiModeButton.Parent = BottomBar
-SettingsFrame.Parent = MainFrame
+ChatPadding.Parent = ChatScroll
+InputContainer.Parent = MainFrame
+InputBox.Parent = InputContainer
+SendButton.Parent = InputContainer
+ControlBar.Parent = MainFrame
+PersonaButton.Parent = ControlBar
+AIButton.Parent = ControlBar
+ClearButton.Parent = ControlBar
 MainFrame.Parent = ScreenGui
 ScreenGui.Parent = PlayerGui
 
--- 聊天记录管理
+-- ==================== 聊天记录管理 ====================
 local ChatHistory = {
     Messages = {},
-    MaxMessages = 100
+    MaxMessages = 200,
+    AutoSave = true
 }
 
--- AI配置
 local AIConfig = {
-    CurrentPersona = "assistant", -- assistant, friend, teacher, etc.
-    IsAiModeActive = false, -- 化身AI模式
-    ResponseDelay = 0.5, -- AI响应延迟
-    ThinkingPhrases = {"让我想想...", "思考中...", "正在处理..."}
+    CurrentPersona = "assistant",
+    IsAIModeActive = false,
+    ResponseDelay = 0.3
 }
 
--- AI人设配置
-local Personas = {
-    assistant = {
-        name = "助手",
-        greeting = "你好！我是你的AI助手，有什么可以帮助你的吗？",
-        responses = {
-            {pattern = "你好.*", response = "你好！很高兴见到你！"},
-            {pattern = "谢谢.*", response = "不客气！我很乐意帮助你。"},
-            {pattern = "再见.*", response = "再见！需要帮助时随时叫我。"},
-            {pattern = "你叫什么.*", response = "我是你的AI助手，专门为你提供帮助！"},
-            {pattern = "帮助.*", response = "我可以帮你解答问题、聊天、提供建议等等。请告诉我你需要什么帮助？"},
-            {pattern = "天气.*", response = "作为一个本地AI，我无法获取实时天气，但你可以查看天气预报应用。"},
-            {pattern = "时间.*", response = "当前游戏时间是 %d:%d。"},
-            {pattern = "robux.*", response = "关于Robux的问题，建议查看Roblox官方帮助中心。"},
-            {pattern = "脚本.*", response = "我可以帮你编写简单的Lua脚本。请描述你想要实现的功能。"},
-            {pattern = "lua.*", response = "Lua是一种轻量级脚本语言。Roblox使用的是修改版的Lua。"},
-            {pattern = "游戏.*", response = "这个游戏看起来很有趣！你在探索什么内容呢？"},
-            {pattern = "朋友.*", response = "和朋友一起玩总是更有趣！"},
-            {pattern = "帮助我.*", response = "我很乐意帮助你！请详细描述你的问题。"},
-            {pattern = "怎么.*", response = "让我想想怎么帮你解决这个问题..."},
-            {pattern = "为什么.*", response = "这个问题很有趣，让我分析一下..."},
-        },
-        fallbackResponses = {
-            "这个问题很有意思，让我想想...",
-            "我不太确定，但我会尽力帮助你！",
-            "你能换个方式再问一次吗？",
-            "我正在学习如何更好地回答这个问题。",
-            "让我们换个话题聊聊其他有趣的事情吧！"
-        }
-    },
-    friend = {
-        name = "朋友",
-        greeting = "嘿！最近怎么样？想聊点什么吗？",
-        responses = {
-            {pattern = "你好.*", response = "嗨！最近过得怎么样？"},
-            {pattern = "不错.*", response = "太好了！听到你过得不错我也很高兴。"},
-            {pattern = "不好.*", response = "听到这个我很难过。想聊聊发生了什么吗？"},
-            {pattern = "无聊.*", response = "我也是！我们做点有趣的事情吧？"},
-            {pattern = "有趣.*", response = "是啊！有什么特别有趣的事情要分享吗？"},
-        }
-    },
-    teacher = {
-        name = "老师",
-        greeting = "你好，学生！今天想学习什么知识？",
-        responses = {
-            {pattern = "数学.*", response = "数学是科学的基础。你想了解哪个部分？"},
-            {pattern = "编程.*", response = "编程是创造数字世界的神奇技能！"},
-            {pattern = "问题.*", response = "好问题！让我们一起探讨答案。"},
-        }
-    }
-}
-
--- 消息模板
-local function createMessageTemplate(isAI, sender, message)
+-- 创建消息模板（现代化设计）
+local function createMessageTemplate(isAI, sender, message, timestamp)
     local messageFrame = Instance.new("Frame")
     messageFrame.Name = "MessageFrame"
     messageFrame.BackgroundTransparency = 1
-    messageFrame.Size = UDim2.new(1, 0, 0, 0)
+    messageFrame.Size = UDim2.new(0.95, 0, 0, 0)
+    messageFrame.LayoutOrder = #ChatHistory.Messages + 1
     messageFrame.AutomaticSize = Enum.AutomaticSize.Y
     
+    -- 消息气泡
     local messageBubble = Instance.new("Frame")
     messageBubble.Name = "MessageBubble"
-    messageBubble.BackgroundColor3 = isAI and Color3.fromRGB(60, 70, 90) or Color3.fromRGB(80, 90, 120)
-    messageBubble.Size = UDim2.new(0.8, 0, 0, 0)
-    messageBubble.Position = isAI and UDim2.new(0, 10, 0, 0) or UDim2.new(1, -10, 0, 0)
-    messageBubble.AnchorPoint = isAI and Vector2.new(0, 0) or Vector2.new(1, 0)
-    messageBubble.AutomaticSize = Enum.AutomaticSize.XY
+    messageBubble.BackgroundColor3 = isAI and Color3.fromRGB(230, 240, 255) or Color3.fromRGB(240, 245, 250)
+    messageBubble.Size = UDim2.new(1, 0, 0, 0)
+    messageBubble.Position = UDim2.new(0, 0, 0, 0)
+    messageBubble.AutomaticSize = Enum.AutomaticSize.Y
     
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = messageBubble
+    local bubbleCorner = Instance.new("UICorner")
+    bubbleCorner.CornerRadius = UDim.new(0, 12)
+    bubbleCorner.Parent = messageBubble
+    
+    local bubbleStroke = Instance.new("UIStroke")
+    bubbleStroke.Color = Color3.fromRGB(220, 230, 240)
+    bubbleStroke.Thickness = 1
+    bubbleStroke.Parent = messageBubble
+    
+    -- 发送者信息
+    local senderFrame = Instance.new("Frame")
+    senderFrame.Name = "SenderFrame"
+    senderFrame.Size = UDim2.new(1, 0, 0, 25)
+    senderFrame.BackgroundTransparency = 1
+    
+    local senderIcon = Instance.new("TextLabel")
+    senderIcon.Name = "SenderIcon"
+    senderIcon.Size = UDim2.new(0, 25, 0, 25)
+    senderIcon.BackgroundTransparency = 1
+    senderIcon.Text = isAI and "🤖" or "👤"
+    senderIcon.TextColor3 = isAI and Color3.fromRGB(0, 100, 200) or Color3.fromRGB(100, 100, 100)
+    senderIcon.TextSize = 14
     
     local senderLabel = Instance.new("TextLabel")
     senderLabel.Name = "SenderLabel"
-    senderLabel.Size = UDim2.new(1, -10, 0, 20)
-    senderLabel.Position = UDim2.new(0, 5, 0, 5)
+    senderLabel.Size = UDim2.new(1, -35, 1, 0)
+    senderLabel.Position = UDim2.new(0, 30, 0, 0)
     senderLabel.BackgroundTransparency = 1
     senderLabel.Text = sender
-    senderLabel.TextColor3 = isAI and Color3.fromRGB(180, 220, 255) or Color3.fromRGB(255, 220, 180)
+    senderLabel.TextColor3 = isAI and Color3.fromRGB(0, 100, 200) or Color3.fromRGB(100, 100, 100)
     senderLabel.TextSize = 12
-    senderLabel.Font = Enum.Font.GothamMedium
+    senderLabel.Font = Enum.Font.GothamBold
     senderLabel.TextXAlignment = Enum.TextXAlignment.Left
     
+    -- 时间戳
+    local timeLabel = Instance.new("TextLabel")
+    timeLabel.Name = "TimeLabel"
+    timeLabel.Size = UDim2.new(0, 60, 1, 0)
+    timeLabel.Position = UDim2.new(1, -65, 0, 0)
+    timeLabel.BackgroundTransparency = 1
+    timeLabel.Text = timestamp or os.date("%H:%M")
+    timeLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    timeLabel.TextSize = 10
+    timeLabel.Font = Enum.Font.Gotham
+    timeLabel.TextXAlignment = Enum.TextXAlignment.Right
+    
+    -- 消息内容（蓝色字体）
     local messageLabel = Instance.new("TextLabel")
     messageLabel.Name = "MessageLabel"
-    messageLabel.Size = UDim2.new(1, -10, 0, 0)
-    messageLabel.Position = UDim2.new(0, 5, 0, 25)
+    messageLabel.Size = UDim2.new(1, -20, 0, 0)
+    messageLabel.Position = UDim2.new(0, 10, 0, 30)
     messageLabel.BackgroundTransparency = 1
     messageLabel.Text = message
-    messageLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    messageLabel.TextColor3 = Color3.fromRGB(0, 100, 200) -- 蓝色字体
     messageLabel.TextSize = 14
     messageLabel.Font = Enum.Font.Gotham
     messageLabel.TextWrapped = true
     messageLabel.TextXAlignment = Enum.TextXAlignment.Left
     messageLabel.AutomaticSize = Enum.AutomaticSize.Y
     
+    -- 复制按钮
     local copyButton = Instance.new("TextButton")
     copyButton.Name = "CopyButton"
-    copyButton.Size = UDim2.new(0, 30, 0, 20)
-    copyButton.Position = UDim2.new(1, -35, 0, 5)
+    copyButton.Size = UDim2.new(0, 25, 0, 25)
+    copyButton.Position = UDim2.new(1, -35, 0, 30)
     copyButton.BackgroundTransparency = 1
     copyButton.Text = "📋"
-    copyButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+    copyButton.TextColor3 = Color3.fromRGB(150, 150, 150)
     copyButton.TextSize = 12
     copyButton.Visible = isAI
     
     -- 组装
-    senderLabel.Parent = messageBubble
+    senderIcon.Parent = senderFrame
+    senderLabel.Parent = senderFrame
+    timeLabel.Parent = senderFrame
+    senderFrame.Parent = messageBubble
     messageLabel.Parent = messageBubble
     copyButton.Parent = messageBubble
     messageBubble.Parent = messageFrame
@@ -291,12 +343,14 @@ end
 
 -- 添加消息到聊天记录
 local function addMessageToChat(isAI, sender, message)
+    local timestamp = os.date("%H:%M")
+    
     -- 保存到历史记录
     table.insert(ChatHistory.Messages, {
         isAI = isAI,
         sender = sender,
         message = message,
-        timestamp = os.time()
+        timestamp = timestamp
     })
     
     -- 限制历史记录数量
@@ -305,123 +359,361 @@ local function addMessageToChat(isAI, sender, message)
     end
     
     -- 创建UI消息
-    local messageUI = createMessageTemplate(isAI, sender, message)
+    local messageUI = createMessageTemplate(isAI, sender, message, timestamp)
     messageUI.Parent = ChatScroll
     
     -- 滚动到底部
-    task.wait()
+    task.wait(0.05)
     ChatScroll.CanvasPosition = Vector2.new(0, ChatScroll.CanvasSize.Y.Offset)
     
     -- 自动保存聊天记录
-    saveChatHistory()
+    if ChatHistory.AutoSave then
+        saveChatHistory()
+    end
 end
+
+-- ==================== AI智能引擎 ====================
+local AILanguageGenerator = {
+    vocabulary = {
+        connectors = {"并且", "而且", "另外", "同时", "此外", "不仅如此", "更重要的是", "具体来说", "简单来说", "总的来说"},
+        adjectives = {"智能的", "高效的", "强大的", "灵活的", "可靠的", "先进的", "创新的", "优化的", "集成的", "动态的"},
+        verbs = {"实现", "完成", "构建", "开发", "创建", "设计", "编写", "优化", "调试", "测试", "部署", "运行"},
+        adverbs = {"高效地", "快速地", "准确地", "可靠地", "稳定地", "灵活地", "智能地", "自动地", "安全地"},
+        nouns = {"功能", "系统", "脚本", "代码", "程序", "算法", "逻辑", "结构", "框架", "模块", "组件"},
+        phrases = {
+            "让我来帮你", "根据我的理解", "从技术角度", "在实际应用中", "为了更好地",
+            "这个方案可以", "这种方法能够", "这个思路可以", "这个设计可以", "这个实现能够"
+        }
+    },
+    
+    templates = {
+        greeting = {"你好！我是你的AI助手，很高兴为你服务！", "欢迎使用AI助手！我随时准备为你提供帮助。", "你好，我可以帮你解答问题、编写脚本或聊天。"},
+        response = {"我认为$answer", "我的建议是$answer", "根据我的分析，$answer", "从我的角度来看，$answer"},
+        question = {"你是想了解$topic吗？", "关于$topic，我可以告诉你...", "对于$topic的问题，我的理解是..."},
+        programming = {"在Roblox Lua中，$solution", "要实现这个功能，你可以$solution", "这里有一个示例代码：$code"}
+    },
+    
+    -- 智能组织语言
+    generateResponse = function(self, input, context)
+        local inputLower = string.lower(input)
+        local response = ""
+        
+        -- 分析意图
+        local intent = self:analyzeIntent(inputLower)
+        local topic = self:extractTopic(inputLower)
+        
+        -- 生成基础回应
+        if intent == "greeting" then
+            response = self.templates.greeting[math.random(1, #self.templates.greeting)]
+        
+        elseif intent == "question" then
+            local template = self.templates.response[math.random(1, #self.templates.response)]
+            local answer = self:generateAnswer(topic, context)
+            response = string.gsub(template, "$answer", answer)
+            
+        elseif intent == "programming" then
+            local solution = self:generateCodeSolution(topic)
+            local template = self.templates.programming[math.random(1, #self.templates.programming)]
+            response = string.gsub(template, "$solution", solution)
+            
+        else
+            -- 默认回应：智能组织语言
+            response = self:composeIntelligentResponse(input, topic, context)
+        end
+        
+        -- 添加连接词使语言更自然
+        response = self:addConnectors(response)
+        
+        return response
+    end,
+    
+    analyzeIntent = function(self, input)
+        local patterns = {
+            greeting = {"你好", "嗨", "hello", "hi", "在吗"},
+            question = {"什么", "怎么", "为什么", "如何", "哪里", "谁", "哪个", "?.*"},
+            programming = {"脚本", "代码", "编程", "lua", "function", "变量", "循环", "if", "then", "end"},
+            request = {"帮我", "帮忙", "请", "求", "需要", "想要"},
+            emotion = {"开心", "高兴", "难过", "生气", "喜欢", "讨厌", "爱", "恨"}
+        }
+        
+        for intent, patternsList in pairs(patterns) do
+            for _, pattern in ipairs(patternsList) do
+                if string.find(input, pattern) then
+                    return intent
+                end
+            end
+        end
+        
+        return "general"
+    end,
+    
+    extractTopic = function(self, input)
+        local topics = {
+            "roblox", "游戏", "脚本", "编程", "lua", "开发", "功能", "问题", 
+            "帮助", "学习", "教学", "示例", "代码", "优化", "调试"
+        }
+        
+        for _, topic in ipairs(topics) do
+            if string.find(input, topic) then
+                return topic
+            end
+        end
+        
+        return "通用"
+    end,
+    
+    generateAnswer = function(self, topic, context)
+        local answers = {
+            roblox = {
+                "Roblox是一个强大的游戏平台，允许用户创建和分享自己的游戏。",
+                "在Roblox中，你可以使用Lua脚本语言来创建交互式游戏体验。",
+                "Roblox Studio是创建Roblox游戏的主要工具，功能非常丰富。"
+            },
+            游戏 = {
+                "游戏开发是一个创造性的过程，需要结合设计和编程技能。",
+                "好的游戏设计应该注重玩家体验和互动性。",
+                "在游戏开发中，优化性能和确保稳定性非常重要。"
+            },
+            脚本 = {
+                "脚本是游戏逻辑的核心，它控制着游戏中的各种行为和互动。",
+                "编写脚本时，要注意代码的可读性和可维护性。",
+                "良好的脚本结构可以让游戏更容易调试和扩展。"
+            },
+            编程 = {
+                "编程是一种解决问题的艺术，需要逻辑思维和创造力。",
+                "学习编程最好的方法是通过实践和构建项目。",
+                "编程不仅仅是写代码，更是设计和架构解决方案的过程。"
+            }
+        }
+        
+        if answers[topic] then
+            return answers[topic][math.random(1, #answers[topic])]
+        else
+            return "这是一个值得深入探讨的话题，我可以根据你的具体需求提供更详细的帮助。"
+        end
+    end,
+    
+    generateCodeSolution = function(self, topic)
+        local solutions = {
+            "创建一个函数来实现所需的功能",
+            "使用变量来存储和操作数据",
+            "通过循环来处理重复的任务",
+            "使用条件语句来控制程序流程",
+            "定义表格来组织相关数据",
+            "使用事件来处理用户交互"
+        }
+        
+        return solutions[math.random(1, #solutions)]
+    end,
+    
+    composeIntelligentResponse = function(self, input, topic, context)
+        -- 从词汇库中选择词汇
+        local connector = self.vocabulary.connectors[math.random(1, #self.vocabulary.connectors)]
+        local adjective = self.vocabulary.adjectives[math.random(1, #self.vocabulary.adjectives)]
+        local verb = self.vocabulary.verbs[math.random(1, #self.vocabulary.verbs)]
+        local noun = self.vocabulary.nouns[math.random(1, #self.vocabulary.nouns)]
+        local phrase = self.vocabulary.phrases[math.random(1, #self.vocabulary.phrases)]
+        
+        -- 构建多样化回应
+        local responsePatterns = {
+            phrase .. " " .. connector .. " " .. "我们可以" .. verb .. "一个" .. adjective .. noun .. "。",
+            "对于" .. topic .. "这个问题，" .. phrase .. " " .. verb .. "一个有效的解决方案。",
+            connector .. " " .. "我们可以" .. verb .. "，这样就能" .. adjective .. "地解决这个问题。",
+            phrase .. " " .. "通过" .. verb .. "一个" .. adjective .. "的" .. noun .. "来实现。"
+        }
+        
+        return responsePatterns[math.random(1, #responsePatterns)]
+    end,
+    
+    addConnectors = function(self, response)
+        local connectors = {"另外", "而且", "同时", "此外"}
+        local chance = math.random(1, 3)
+        
+        if chance == 1 then
+            local connector = connectors[math.random(1, #connectors)]
+            response = connector .. "，" .. response
+        end
+        
+        return response
+    end
+}
+
+-- AI人格系统
+local Personas = {
+    assistant = {
+        name = "智能助手",
+        style = "专业、准确、乐于助人",
+        greeting = "你好！我是你的AI助手，专门为你提供技术支持、问题解答和脚本编写帮助。有什么我可以为你做的吗？",
+        responses = AILanguageGenerator
+    },
+    
+    friend = {
+        name = "知心朋友",
+        style = "友好、幽默、贴心",
+        greeting = "嗨！最近怎么样？我是你的AI朋友，可以和你聊天、分享趣事，或者帮你解决问题！",
+        responses = AILanguageGenerator
+    },
+    
+    teacher = {
+        name = "专业导师",
+        style = "严谨、教育性强、知识渊博",
+        greeting = "你好，学员！我是你的AI导师，专注于编程教学和技术指导。准备好开始学习了吗？",
+        responses = AILanguageGenerator
+    },
+    
+    developer = {
+        name = "资深开发者",
+        style = "技术性强、经验丰富、实用主义",
+        greeting = "嘿，开发者！我是你的AI开发伙伴，专注于Roblox脚本编程和游戏开发技巧。有什么技术问题吗？",
+        responses = AILanguageGenerator
+    }
+}
+
+-- ==================== 数据存储系统 ====================
+local DataStore = {
+    saveData = function(key, data)
+        local success, error = pcall(function()
+            local store = game:GetService("DataStoreService"):GetDataStore("AIChatData_" .. Player.UserId)
+            store:SetAsync(key, data)
+        end)
+        
+        if not success then
+            warn("保存数据失败: " .. tostring(error))
+            return false
+        end
+        return true
+    end,
+    
+    loadData = function(key)
+        local success, data = pcall(function()
+            local store = game:GetService("DataStoreService"):GetDataStore("AIChatData_" .. Player.UserId)
+            return store:GetAsync(key)
+        end)
+        
+        if success and data then
+            return data
+        end
+        return nil
+    end
+}
 
 -- 保存聊天记录
 local function saveChatHistory()
-    local success, message = pcall(function()
-        local dataStore = game:GetService("DataStoreService"):GetDataStore("AIChatHistory_" .. Player.UserId)
-        dataStore:SetAsync("history", ChatHistory.Messages)
-    end)
+    if #ChatHistory.Messages == 0 then return end
     
-    if not success then
-        warn("保存聊天记录失败: " .. message)
+    local saveData = {
+        messages = ChatHistory.Messages,
+        timestamp = os.date("%Y-%m-%d %H:%M:%S"),
+        persona = AIConfig.CurrentPersona
+    }
+    
+    local success = DataStore.saveData("chat_history", saveData)
+    if success then
+        -- print("聊天记录已自动保存")
     end
 end
 
 -- 加载聊天记录
 local function loadChatHistory()
-    local success, result = pcall(function()
-        local dataStore = game:GetService("DataStoreService"):GetDataStore("AIChatHistory_" .. Player.UserId)
-        return dataStore:GetAsync("history")
-    end)
-    
-    if success and result then
-        ChatHistory.Messages = result
+    local savedData = DataStore.loadData("chat_history")
+    if savedData and savedData.messages then
+        ChatHistory.Messages = savedData.messages
+        
         -- 重新渲染消息
         for _, msg in ipairs(ChatHistory.Messages) do
-            createMessageTemplate(msg.isAI, msg.sender, msg.message).Parent = ChatScroll
+            createMessageTemplate(msg.isAI, msg.sender, msg.message, msg.timestamp).Parent = ChatScroll
+        end
+        
+        if #ChatHistory.Messages > 0 then
+            ChatScroll.CanvasPosition = Vector2.new(0, ChatScroll.CanvasSize.Y.Offset)
         end
     end
 end
 
--- AI响应函数（模拟智能）
-local function getAIResponse(input)
-    local persona = Personas[AIConfig.CurrentPersona]
-    if not persona then return "抱歉，我还没有学会回答这个问题。" end
+-- ==================== AI化身系统 ====================
+local AIPersona = {
+    isActive = false,
+    lastMessageTime = 0,
+    cooldown = 2,
     
-    local lowerInput = string.lower(input)
+    activate = function(self)
+        self.isActive = true
+        AIButton.Text = "🤖 化身AI: 开启"
+        AIButton.BackgroundColor3 = Color3.fromRGB(220, 240, 255)
+        addMessageToChat(true, "系统", "化身AI模式已开启！现在AI会在游戏聊天中代表你发言。")
+    end,
     
-    -- 检查匹配模式
-    for _, patternData in ipairs(persona.responses) do
-        if string.match(lowerInput, patternData.pattern) then
-            local response = patternData.response
+    deactivate = function(self)
+        self.isActive = false
+        AIButton.Text = "🤖 化身AI: 关闭"
+        AIButton.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
+        addMessageToChat(true, "系统", "化身AI模式已关闭。")
+    end,
+    
+    sendToGameChat = function(self, message)
+        if not self.isActive then return end
+        
+        -- 检查冷却时间
+        local currentTime = tick()
+        if currentTime - self.lastMessageTime < self.cooldown then
+            return
+        end
+        
+        if hasTextChat then
+            local success, err = pcall(function()
+                TextChatService.TextChannels.RBXGeneral:SendAsync(message)
+            end)
             
-            -- 处理特殊占位符
-            if string.find(response, "%%d:%%d") then
-                local time = os.date("*t")
-                response = string.format("当前游戏时间是 %d:%02d。", time.hour, time.min)
+            if success then
+                self.lastMessageTime = currentTime
+                -- print("AI消息已发送到游戏聊天")
+            else
+                warn("发送到游戏聊天失败: " .. tostring(err))
             end
-            
-            return response
         end
     end
-    
-    -- 如果没有匹配，使用fallback回复
-    local fallbackCount = #persona.fallbackResponses
-    if fallbackCount > 0 then
-        return persona.fallbackResponses[math.random(1, fallbackCount)]
-    end
-    
-    return "这个问题很有意思，我正在学习中..."
-end
+}
 
--- 处理用户输入
+-- ==================== 消息处理系统 ====================
 local function processUserInput(input)
-    if input == "" then return end
+    if input == "" or string.len(input) < 1 then return end
     
     -- 添加用户消息
     addMessageToChat(false, Player.Name, input)
     
-    -- AI思考中...
-    local thinkingIndex = math.random(1, #AIConfig.ThinkingPhrases)
-    addMessageToChat(true, Personas[AIConfig.CurrentPersona].name, AIConfig.ThinkingPhrases[thinkingIndex])
+    -- 显示AI正在思考
+    local thinkingMessages = {"思考中...", "让我想想...", "正在处理...", "分析问题中..."}
+    local thinkingMsg = thinkingMessages[math.random(1, #thinkingMessages)]
+    addMessageToChat(true, Personas[AIConfig.CurrentPersona].name, thinkingMsg)
     
     -- 模拟AI思考延迟
     task.wait(AIConfig.ResponseDelay)
     
-    -- 获取AI回复
-    local aiResponse = getAIResponse(input)
+    -- 获取当前人格的AI响应
+    local currentPersona = Personas[AIConfig.CurrentPersona]
+    local aiResponse = currentPersona.responses:generateResponse(input, ChatHistory.Messages)
     
     -- 移除思考消息
     if #ChatScroll:GetChildren() > 1 then
-        local lastMessage = ChatScroll:GetChildren()[#ChatScroll:GetChildren()]
-        if lastMessage:IsA("Frame") then
-            lastMessage:Destroy()
+        local lastChild = ChatScroll:GetChildren()[#ChatScroll:GetChildren()]
+        if lastChild:IsA("Frame") and lastChild:FindFirstChild("MessageBubble") then
+            local messageLabel = lastChild.MessageBubble:FindFirstChild("MessageLabel")
+            if messageLabel and (messageLabel.Text == "思考中..." or messageLabel.Text == "让我想想..." or messageLabel.Text == "正在处理..." or messageLabel.Text == "分析问题中...") then
+                lastChild:Destroy()
+            end
         end
     end
     
     -- 添加AI回复
     addMessageToChat(true, Personas[AIConfig.CurrentPersona].name, aiResponse)
     
-    -- 如果AI模式开启，将回复发送到游戏聊天
-    if AIConfig.IsAiModeActive then
-        game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync(aiResponse)
+    -- 如果化身AI开启，发送到游戏聊天
+    if AIPersona.isActive then
+        AIPersona:sendToGameChat(aiResponse)
     end
 end
 
--- 切换AI人设
-local function switchPersona(personaKey)
-    if Personas[personaKey] then
-        AIConfig.CurrentPersona = personaKey
-        PersonaButton.Text = "AI人设: " .. Personas[personaKey].name
-        
-        -- 发送问候语
-        task.wait(0.5)
-        addMessageToChat(true, Personas[personaKey].name, Personas[personaKey].greeting)
-    end
-end
-
--- 初始化UI事件
+-- ==================== UI交互系统 ====================
 local function initUIEvents()
     -- 窗口拖动
     local dragging = false
@@ -450,31 +742,53 @@ local function initUIEvents()
     UserInputService.InputChanged:Connect(function(input)
         if dragging and input == dragInput then
             local delta = input.Position - dragStart
-            MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, 
-                                          startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            MainFrame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
         end
     end)
     
     -- 最小化/最大化
     local isMinimized = false
     local originalSize = MainFrame.Size
-    local minimizedSize = UDim2.new(0, 400, 0, 30)
+    local originalPosition = MainFrame.Position
+    local minimizedSize = UDim2.new(0, 200, 0, 40)
+    local minimizedPosition = UDim2.new(1, -210, 0, 10)
     
     MinimizeButton.MouseButton1Click:Connect(function()
         isMinimized = not isMinimized
         
         local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad)
-        local tween = TweenService:Create(MainFrame, tweenInfo, {
-            Size = isMinimized and minimizedSize or originalSize
-        })
+        local tween
+        
+        if isMinimized then
+            tween = TweenService:Create(MainFrame, tweenInfo, {
+                Size = minimizedSize,
+                Position = minimizedPosition
+            })
+            MinimizeButton.ImageRectOffset = Vector2.new(364, 364)
+            TitleLabel.Text = "🤖"
+        else
+            tween = TweenService:Create(MainFrame, tweenInfo, {
+                Size = originalSize,
+                Position = originalPosition
+            })
+            MinimizeButton.ImageRectOffset = Vector2.new(844, 404)
+            TitleLabel.Text = "🤖 AI智能助手"
+        end
+        
         tween:Play()
         
-        MinimizeButton.Text = isMinimized and "+" or "_"
+        -- 隐藏/显示内容
+        ChatContainer.Visible = not isMinimized
+        InputContainer.Visible = not isMinimized
+        ControlBar.Visible = not isMinimized
     end)
     
-    -- 关闭
+    -- 关闭窗口
     CloseButton.MouseButton1Click:Connect(function()
-        ScreenGui.Enabled = false
+        MainFrame.Visible = false
     end)
     
     -- 发送消息
@@ -484,111 +798,176 @@ local function initUIEvents()
     end)
     
     InputBox.FocusLost:Connect(function(enterPressed)
-        if enterPressed then
+        if enterPressed and InputBox.Text ~= "" then
             processUserInput(InputBox.Text)
             InputBox.Text = ""
         end
     end)
     
-    -- 设置按钮
-    SettingsButton.MouseButton1Click:Connect(function()
-        SettingsFrame.Visible = not SettingsFrame.Visible
+    -- AI人格切换
+    local personaIndex = 1
+    local personaKeys = {"assistant", "friend", "teacher", "developer"}
+    
+    PersonaButton.MouseButton1Click:Connect(function()
+        personaIndex = (personaIndex % #personaKeys) + 1
+        local newPersona = personaKeys[personaIndex]
+        
+        AIConfig.CurrentPersona = newPersona
+        PersonaButton.Text = "🧠 " .. Personas[newPersona].name
+        
+        -- 显示切换消息
+        addMessageToChat(true, "系统", "已切换到" .. Personas[newPersona].name .. "模式。风格：" .. Personas[newPersona].style)
+        
+        -- 保存当前人格设置
+        DataStore.saveData("current_persona", newPersona)
     end)
     
-    -- AI人设切换
-    PersonaButton.MouseButton1Click:Connect(function()
-        local personas = {"assistant", "friend", "teacher"}
-        local currentIndex = 1
-        for i, key in ipairs(personas) do
-            if key == AIConfig.CurrentPersona then
-                currentIndex = i
-                break
+    -- 化身AI开关
+    AIButton.MouseButton1Click:Connect(function()
+        if AIPersona.isActive then
+            AIPersona:deactivate()
+        else
+            AIPersona:activate()
+        end
+    end)
+    
+    -- 清空聊天记录
+    ClearButton.MouseButton1Click:Connect(function()
+        ChatHistory.Messages = {}
+        
+        -- 清除UI消息
+        for _, child in ipairs(ChatScroll:GetChildren()) do
+            if child:IsA("Frame") then
+                child:Destroy()
             end
         end
         
-        local nextIndex = currentIndex % #personas + 1
-        switchPersona(personas[nextIndex])
-    end)
-    
-    -- AI模式切换
-    AiModeButton.MouseButton1Click:Connect(function()
-        AIConfig.IsAiModeActive = not AIConfig.IsAiModeActive
-        AiModeButton.Text = "AI模式: " .. (AIConfig.IsAiModeActive and "开" or "关")
-        
-        addMessageToChat(true, "系统", "化身AI模式已" .. (AIConfig.IsAiModeActive and "开启" or "关闭"))
+        addMessageToChat(true, "系统", "聊天记录已清空。")
+        saveChatHistory()
     end)
     
     -- 复制消息功能
     ChatScroll.ChildAdded:Connect(function(child)
-        task.wait()
-        local copyButton = child:FindFirstChild("MessageBubble") and 
-                          child.MessageBubble:FindFirstChild("CopyButton")
-        if copyButton then
-            copyButton.MouseButton1Click:Connect(function()
-                local messageLabel = child.MessageBubble:FindFirstChild("MessageLabel")
-                if messageLabel then
-                    -- 在Roblox中复制文本到剪贴板
-                    setclipboard(messageLabel.Text)
+        task.wait(0.1)
+        if child:IsA("Frame") and child:FindFirstChild("MessageBubble") then
+            local copyButton = child.MessageBubble:FindFirstChild("CopyButton")
+            local messageLabel = child.MessageBubble:FindFirstChild("MessageLabel")
+            
+            if copyButton and messageLabel then
+                copyButton.MouseButton1Click:Connect(function()
+                    -- 在Roblox中复制文本
+                    pcall(function()
+                        setclipboard(messageLabel.Text)
+                    end)
                     
-                    -- 显示复制成功提示
+                    -- 显示复制成功反馈
                     local originalText = copyButton.Text
                     copyButton.Text = "✓"
+                    copyButton.TextColor3 = Color3.fromRGB(0, 200, 0)
+                    
                     task.wait(1)
                     copyButton.Text = originalText
-                end
-            end)
-        end
-    end)
-end
-
--- 键盘快捷键打开聊天
-local function initKeyboardShortcut()
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        
-        if input.KeyCode == Enum.KeyCode.F2 then
-            ScreenGui.Enabled = not ScreenGui.Enabled
-            
-            if ScreenGui.Enabled then
-                InputBox:CaptureFocus()
+                    copyButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+                end)
             end
         end
     end)
 end
 
--- 初始化函数
-local function init()
-    -- 加载聊天历史
+-- ==================== 键盘快捷键系统 ====================
+local function initKeyboardShortcuts()
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        if input.KeyCode == Enum.KeyCode.F2 then
+            MainFrame.Visible = not MainFrame.Visible
+            if MainFrame.Visible then
+                InputBox:CaptureFocus()
+            end
+        end
+        
+        if input.KeyCode == Enum.KeyCode.Escape and MainFrame.Visible then
+            MainFrame.Visible = false
+        end
+    end)
+end
+
+-- ==================== 初始化系统 ====================
+local function initialize()
+    print("🤖 AI智能聊天系统初始化中...")
+    
+    -- 加载保存的数据
     loadChatHistory()
+    
+    -- 加载保存的人格设置
+    local savedPersona = DataStore.loadData("current_persona")
+    if savedPersona and Personas[savedPersona] then
+        AIConfig.CurrentPersona = savedPersona
+        PersonaButton.Text = "🧠 " .. Personas[savedPersona].name
+    end
     
     -- 初始化UI事件
     initUIEvents()
     
     -- 初始化键盘快捷键
-    initKeyboardShortcut()
+    initKeyboardShortcuts()
     
-    -- 发送初始问候
+    -- 显示欢迎消息
     task.wait(1)
-    addMessageToChat(true, Personas[AIConfig.CurrentPersona].name, 
-                    Personas[AIConfig.CurrentPersona].greeting)
+    MainFrame.Visible = true
     
-    -- 添加帮助提示
-    task.wait(2)
-    addMessageToChat(true, "提示", "按F2可以快速打开/关闭聊天窗口")
+    task.wait(0.5)
+    addMessageToChat(true, Personas[AIConfig.CurrentPersona].name, Personas[AIConfig.CurrentPersona].greeting)
     
-    print("AI聊天系统已加载！按F2打开聊天窗口。")
+    task.wait(1)
+    addMessageToChat(true, "系统提示", "按F2可以快速显示/隐藏聊天窗口，按ESC关闭窗口")
+    
+    print("✅ AI智能聊天系统已就绪！按F2打开聊天窗口。")
+    
+    return {
+        ToggleUI = function()
+            MainFrame.Visible = not MainFrame.Visible
+            if MainFrame.Visible then
+                InputBox:CaptureFocus()
+            end
+        end,
+        
+        SendMessage = function(message)
+            processUserInput(message)
+        end,
+        
+        SwitchPersona = function(personaKey)
+            if Personas[personaKey] then
+                AIConfig.CurrentPersona = personaKey
+                PersonaButton.Text = "🧠 " .. Personas[personaKey].name
+                DataStore.saveData("current_persona", personaKey)
+                return true
+            end
+            return false
+        end,
+        
+        ToggleAIPersona = function()
+            if AIPersona.isActive then
+                AIPersona:deactivate()
+            else
+                AIPersona:activate()
+            end
+            return AIPersona.isActive
+        end,
+        
+        ExportChat = function()
+            local exportData = {
+                messages = ChatHistory.Messages,
+                exportTime = os.date("%Y-%m-%d %H:%M:%S"),
+                playerName = Player.Name
+            }
+            return exportData
+        end
+    }
 end
 
--- 启动初始化
-init()
+-- 启动AI聊天系统
+local AIChatSystem = initialize()
 
-return {
-    SwitchPersona = switchPersona,
-    AddMessage = addMessageToChat,
-    ToggleAI = function()
-        AIConfig.IsAiModeActive = not AIConfig.IsAiModeActive
-        return AIConfig.IsAiModeActive
-    end,
-    SaveHistory = saveChatHistory,
-    LoadHistory = loadChatHistory
-}
+-- 暴露给外部使用
+return AIChatSystem
